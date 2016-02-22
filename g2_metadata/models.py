@@ -16,6 +16,7 @@ from sqlalchemy import (
     Table,
     Text,
     TypeDecorator,
+    event,
     inspect,
     text,
     )
@@ -42,43 +43,52 @@ class Timestamp(TypeDecorator):
         return datetime.utcfromtimestamp(value)
 
 
+@event.listens_for(Base, 'instrument_class', propagate=True)
+def _instrument_class(mapper, cls):
+    """ Prefix all non-explicit column names with ``'g_``
+    """
+    for attr, column in cls.__dict__.items():
+        if isinstance(column, Column):
+            if column.name == attr:
+                column.name = 'g_' + attr
+
+
 class Entity(Base):
     __tablename__ = 'g2_Entity'
-    entity_type = Column('g_entityType', String(32), nullable=False)
+    entityType = Column(String(32), nullable=False)
     __mapper_args__ = {
-        'polymorphic_on': entity_type,
+        'polymorphic_on': entityType,
         'polymorphic_identity': 'GalleryEntity',
         }
 
     entity_id = Column('g_id', Integer, primary_key=True,
                        server_default=text("'0'"))
-    creation_time = Column('g_creationTimestamp', Timestamp,
-                           nullable=False,
-                           index=True, server_default=text("'0'"))
-    is_linkable = Column('g_isLinkable', Integer, nullable=False,
-                         index=True, server_default=text("'0'"))
-    link_id = Column('g_linkId', ForeignKey('g2_Entity.g_id'), index=True)
-    modification_time = Column('g_modificationTimestamp', Timestamp,
-                               nullable=False,
-                               index=True, server_default=text("'0'"))
-    serial_number = Column('g_serialNumber', Integer, nullable=False,
-                           index=True, server_default=text("'0'"))
-    on_load_handlers = Column('g_onLoadHandlers', String(128))
+    creationTimestamp = Column(Timestamp, nullable=False, index=True,
+                               server_default=text("'0'"))
+    isLinkable = Column(Integer, nullable=False, index=True,
+                        server_default=text("'0'"))
+    linkId = Column(ForeignKey(entity_id), index=True)
+    modificationTimestamp = Column(Timestamp, nullable=False, index=True,
+                                   server_default=text("'0'"))
+    serialNumber = Column(Integer, nullable=False, index=True,
+                          server_default=text("'0'"))
+    onLoadHandlers = Column(String(128))
 
-    link = relationship('Entity', remote_side=[entity_id],
-                        lazy='subquery',
-                        backref='linked_from')
+    linked_entity = relationship('Entity', remote_side=[entity_id],
+                                 lazy='subquery',
+                                 backref='linked_from')
 
-    link_path = association_proxy('link', 'path')
+    link_path = association_proxy('linked_entity', 'path')
 
     _plugin_parameters = relationship(
         'PluginParameterMap',
-        order_by=('[PluginParameterMap.plugin_type,'
-                  ' PluginParameterMap.plugin_id]'))
+        order_by=('[PluginParameterMap.pluginType,'
+                  ' PluginParameterMap.pluginId]'))
 
     @property
     def plugin_parameters(self):
         # Note: Only Albums and Users seem to have plugin_parameters
+        # so only add to _extra_json_attrs on those subclasses.
         return _plugin_parameters_to_dict(self._plugin_parameters)
 
     _extra_json_attrs = ['link_path']
@@ -125,10 +135,10 @@ class ChildEntity(Entity):
         'inherit_condition': Entity.entity_id == entity_id,
         }
 
-    parent_id = Column('g_parentId', ForeignKey(Entity.entity_id),
-                       nullable=False, index=True, server_default=text("'0'"))
+    parentId = Column(ForeignKey(Entity.entity_id), nullable=False, index=True,
+                      server_default=text("'0'"))
 
-    parent = relationship(Entity, primaryjoin=parent_id == Entity.entity_id,
+    parent = relationship(Entity, primaryjoin=parentId == Entity.entity_id,
                           backref='children')
 
 
@@ -138,16 +148,16 @@ class FileSystemEntity(ChildEntity):
     entity_id = Column('g_id', ForeignKey(ChildEntity.entity_id),
                        primary_key=True,
                        server_default=text("'0'"))
-    path_component = Column('g_pathComponent', String(128), index=True)
+    pathComponent = Column(String(128), index=True)
 
     @property
     def path(self):
         parent = self.parent
         if isinstance(parent, FileSystemEntity):
-            assert self.path_component
-            return os.path.join(parent.path, self.path_component)
+            assert self.pathComponent
+            return os.path.join(parent.path, self.pathComponent)
         else:
-            assert self.path_component is None
+            assert self.pathComponent is None
             return ''
 
     _extra_json_attrs = ChildEntity._extra_json_attrs + [
@@ -161,16 +171,14 @@ class Comment(ChildEntity):
 
     entity_id = Column('g_id', ForeignKey(ChildEntity.entity_id),
                        primary_key=True, server_default=text("'0'"))
-    commenter_id = Column('g_commenterId', Integer, nullable=False,
-                          server_default=text("'0'"))
-    host = Column('g_host', String(128), nullable=False)
-    subject = Column('g_subject', String(128))
-    comment = Column('g_comment', Text)
-    date = Column('g_date', Timestamp, nullable=False, index=True,
+    commenterId = Column(Integer, nullable=False, server_default=text("'0'"))
+    host = Column(String(128), nullable=False)
+    subject = Column(String(128))
+    comment = Column(Text)
+    date = Column(Timestamp, nullable=False, index=True,
                   server_default=text("'0'"))
-    author = Column('g_author', String(128))
-    publish_status = Column('g_publishStatus', Integer, nullable=False,
-                            server_default=text("'0'"))
+    author = Column(String(128))
+    publishStatus = Column(Integer, nullable=False, server_default=text("'0'"))
 
 
 class ThumbnailImage(FileSystemEntity):
@@ -179,11 +187,11 @@ class ThumbnailImage(FileSystemEntity):
 
     entity_id = Column('g_id', Integer, ForeignKey(FileSystemEntity.entity_id),
                        primary_key=True)
-    mime_type = Column('g_mimeType', String(128))
-    size = Column('g_size', Integer)
-    width = Column('g_width', Integer)
-    height = Column('g_height', Integer)
-    item_mime_types = Column('g_itemMimeTypes', String(128))
+    mimeType = Column(String(128))
+    size = Column(Integer)
+    width = Column(Integer)
+    height = Column(Integer)
+    itemMimeTypes = Column(String(128))
 
 
 t_Item = Table(
@@ -194,14 +202,14 @@ t_Item = Table(
            key='entity_id'),
     Column('g_canContainChildren', Integer,
            nullable=False, server_default=text("'0'"),
-           key='can_contain_children'),
+           key='canContainChildren'),
     Column('g_description', Text,
            key='description'),
     Column('g_keywords', String(255), index=True,
            key='keywords'),
     Column('g_ownerId', Integer, nullable=False,
            index=True, server_default=text("'0'"),
-           key='owner_id'),
+           key='ownerId'),
     Column('g_summary', String(255), index=True,
            key='summary'),
     Column('g_title', String(128), index=True,
@@ -209,11 +217,11 @@ t_Item = Table(
     Column('g_viewedSinceTimestamp', Timestamp,
            nullable=False,
            server_default=text("'0'"),
-           key='viewed_since_time'),
+           key='viewedSinceTimestamp'),
     Column('g_originationTimestamp', Timestamp,
            nullable=False,
            server_default=text("'0'"),
-           key='origination_time'),
+           key='originationTimestamp'),
     Column('g_renderer', String(128),
            key='renderer'),
     )
@@ -224,11 +232,11 @@ t_ItemAttributesMap = Table(
            primary_key=True, server_default=text("'0'"),
            key='_attributes_id'),
     Column('g_viewCount', Integer,
-           key='view_count'),
+           key='viewCount'),
     Column('g_orderWeight', Integer,
-           key='order_weight'),
+           key='orderWeight'),
     Column('g_parentSequence', String(255), nullable=False, index=True,
-           key='parent_sequence'),
+           key='parentSequence'),
     )
 
 t_ItemHiddenMap = Table(
@@ -248,18 +256,18 @@ class Item(FileSystemEntity):
 
     subitems = relationship(
         'Item',
-        primaryjoin='Item.entity_id == remote(foreign(Item.parent_id))',
-        order_by='Item.order_weight')
+        primaryjoin='Item.entity_id == remote(foreign(Item.parentId))',
+        order_by='Item.orderWeight')
 
     comments = relationship(
         'Comment',
-        primaryjoin='Item.entity_id == remote(foreign(Comment.parent_id))',
+        primaryjoin='Item.entity_id == remote(foreign(Comment.parentId))',
         order_by='Comment.date')
 
     derivatives = relationship(
         'Derivative',
-        primaryjoin='Item.entity_id == remote(foreign(Derivative.parent_id))',
-        order_by='Derivative.derivative_order')
+        primaryjoin='Item.entity_id == remote(foreign(Derivative.parentId))',
+        order_by='Derivative.derivativeOrder')
 
     _extra_json_attrs = FileSystemEntity._extra_json_attrs + [
         'is_hidden',
@@ -275,9 +283,9 @@ class AlbumItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    theme = Column('g_theme', String(32))
-    order_by = Column('g_orderBy', String(128))
-    order_direction = Column('g_orderDirection', String(32))
+    theme = Column(String(32))
+    orderBy = Column(String(128))
+    orderDirection = Column(String(32))
 
     @property
     def hilight(self):
@@ -301,8 +309,8 @@ class PhotoItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    width = Column('g_width', Integer)
-    height = Column('g_height', Integer)
+    width = Column(Integer)
+    height = Column(Integer)
 
 
 class MovieItem(Item):
@@ -311,9 +319,9 @@ class MovieItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    width = Column('g_width', Integer)
-    height = Column('g_height', Integer)
-    duration = Column('g_duration', Integer)
+    width = Column(Integer)
+    height = Column(Integer)
+    duration = Column(Integer)
 
 
 class LinkItem(Item):
@@ -322,7 +330,7 @@ class LinkItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    link_url = Column('g_link', Text, nullable=False)
+    link = Column(Text, nullable=False)
 
 
 class AnimationItem(Item):
@@ -331,8 +339,8 @@ class AnimationItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    width = Column('g_width', Integer)
-    height = Column('g_height', Integer)
+    width = Column(Integer)
+    height = Column(Integer)
 
 
 class DataItem(Item):
@@ -341,8 +349,8 @@ class DataItem(Item):
 
     entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    mime_type = Column('g_mimeType', String(128))
-    size = Column('g_size', Integer)
+    mimeType = Column(String(128))
+    size = Column(Integer)
 
 
 class UnknownItem(Item):
@@ -359,23 +367,20 @@ class Derivative(ChildEntity):
                        server_default=text("'0'"))
     __mapper_args__ = {'inherit_condition': Entity.entity_id == entity_id}
 
-    derivative_source_id = Column('g_derivativeSourceId',
-                                  ForeignKey(Entity.entity_id),
-                                  nullable=False, index=True,
-                                  server_default=text("'0'"))
-    derivative_operations = Column('g_derivativeOperations', String(255))
-    derivative_order = Column('g_derivativeOrder', Integer,
-                              nullable=False, index=True,
-                              server_default=text("'0'"))
-    derivative_size = Column('g_derivativeSize', Integer)
-    derivative_type = Column('g_derivativeType', Integer,
-                             nullable=False, index=True,
+    derivativeSourceId = Column(ForeignKey(Entity.entity_id),
+                                nullable=False, index=True,
+                                server_default=text("'0'"))
+    derivativeOperations = Column(String(255))
+    derivativeOrder = Column(Integer, nullable=False, index=True,
                              server_default=text("'0'"))
-    mime_type = Column('g_mimeType', String(128), nullable=False)
-    post_filter_operations = Column('g_postFilterOperations', String(255))
-    is_broken = Column('g_isBroken', Integer)
+    derivativeSize = Column(Integer)
+    derivativeType = Column(Integer, nullable=False, index=True,
+                            server_default=text("'0'"))
+    mimeType = Column(String(128), nullable=False)
+    postFilterOperations = Column(String(255))
+    isBroken = Column(Integer)
 
-    source = relationship(Entity, foreign_keys=[derivative_source_id])
+    source = relationship(Entity, foreign_keys=[derivativeSourceId])
 
     _extra_json_attrs = ChildEntity._extra_json_attrs + [
         'source',
@@ -388,8 +393,8 @@ class DerivativeImage(Derivative):
 
     entity_id = Column('g_id', ForeignKey(Derivative.entity_id),
                        primary_key=True, server_default=text("'0'"))
-    width = Column('g_width', Integer)
-    height = Column('g_height', Integer)
+    width = Column(Integer)
+    height = Column(Integer)
 
 
 t_g2_DerivativePrefsMap = Table(
@@ -416,12 +421,12 @@ class User(Entity):
 
     entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    user_name = Column('g_userName', String(32), nullable=False, unique=True)
-    full_name = Column('g_fullName', String(128))
-    hashed_password = Column('g_hashedPassword', String(128))
-    email = Column('g_email', String(255))
-    language = Column('g_language', String(128))
-    locked = Column('g_locked', Integer, server_default=text("'0'"))
+    userName = Column(String(32), nullable=False, unique=True)
+    fullName = Column(String(128))
+    hashedPassword = Column(String(128))
+    email = Column(String(255))
+    language = Column(String(128))
+    locked = Column(Integer, server_default=text("'0'"))
 
     _extra_json_attrs = Entity._extra_json_attrs + [
         'plugin_parameters',
@@ -434,9 +439,8 @@ class Group(Entity):
 
     entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
                        server_default=text("'0'"))
-    group_type = Column('g_groupType', Integer, nullable=False,
-                        server_default=text("'0'"))
-    group_name = Column('g_groupName', String(128), unique=True)
+    groupType = Column(Integer, nullable=False, server_default=text("'0'"))
+    groupName = Column(String(128), unique=True)
 
     users = relationship(User, secondary=t_UserGroupMap,
                          backref='groups')
@@ -445,12 +449,9 @@ class Group(Entity):
 class PluginMap(Base):
     __tablename__ = 'g2_PluginMap'
 
-    plugin_type = Column('g_pluginType', String(32), primary_key=True,
-                         nullable=False)
-    plugin_id = Column('g_pluginId', String(32), primary_key=True,
-                       nullable=False)
-    active = Column('g_active', Integer, nullable=False,
-                    server_default=text("'0'"))
+    pluginType = Column(String(32), primary_key=True, nullable=False)
+    pluginId = Column(String(32), primary_key=True, nullable=False)
+    active = Column(Integer, nullable=False, server_default=text("'0'"))
 
 
 t_g2_PluginPackageMap = Table(
@@ -466,22 +467,17 @@ t_g2_PluginPackageMap = Table(
 
 class PluginParameterMap(Base):
     __tablename__ = 'g2_PluginParameterMap'
-    plugin_type = Column('g_pluginType', String(32), primary_key=True,
-                         nullable=False)
-    plugin_id = Column('g_pluginId', String(32), primary_key=True,
-                       nullable=False)
-    item_id = Column('g_itemId', ForeignKey(Entity.entity_id),
-                     primary_key=True,
-                     nullable=False, server_default=text("'0'"))
+    pluginType = Column(String(32), primary_key=True, nullable=False)
+    pluginId = Column(String(32), primary_key=True, nullable=False)
+    itemId = Column(ForeignKey(Entity.entity_id), primary_key=True,
+                    nullable=False,
+                    server_default=text("'0'"))
 
-    parameter_name = Column('g_parameterName', String(128), primary_key=True,
-                            nullable=False)
-
-    parameter_value = Column('g_parameterValue', Text, nullable=False)
+    parameterName = Column(String(128), primary_key=True, nullable=False)
+    parameterValue = Column(Text, nullable=False)
 
     __table_args__ = (
-        Index('g2_PluginParameterMap_12808',
-              'g_pluginType', 'g_pluginId', 'g_itemId'),
+        Index('g2_PluginParameterMap_12808', pluginType, pluginId, itemId),
         )
 
 
@@ -509,12 +505,12 @@ def _maybe_php_deserialize(value):
 
 def _plugin_parameters_to_dict(plugin_parameters):
     parameters = sorted(plugin_parameters,
-                        key=attrgetter('plugin_type', 'plugin_id'))
+                        key=attrgetter('pluginType', 'pluginId'))
     by_plugin = {}
-    for ptype, pt_params in groupby(parameters, attrgetter('plugin_type')):
+    for ptype, pt_params in groupby(parameters, attrgetter('pluginType')):
         by_plugin[ptype] = {}
-        for pid, params in groupby(pt_params, attrgetter('plugin_id')):
-            items = map(attrgetter('parameter_name', 'parameter_value'),
+        for pid, params in groupby(pt_params, attrgetter('pluginId')):
+            items = map(attrgetter('parameterName', 'parameterValue'),
                         params)
             pdict = dict((name, _maybe_php_deserialize(value))
                          for name, value in items)
@@ -524,7 +520,7 @@ def _plugin_parameters_to_dict(plugin_parameters):
 
 def get_global_plugin_parameters(session):
     return _plugin_parameters_to_dict(
-        session.query(PluginParameterMap).filter_by(item_id=0))
+        session.query(PluginParameterMap).filter_by(itemId=0))
 
 
 class AccessMap(Base):

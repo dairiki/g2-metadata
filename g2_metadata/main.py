@@ -83,7 +83,7 @@ def main():
             ])
         .options(
             sa.orm.subqueryload('parent'),
-            sa.orm.subqueryload('link'),
+            sa.orm.subqueryload('linked_entity'),
             sa.orm.subqueryload('subitems'),
             sa.orm.subqueryload('comments'),
             sa.orm.subqueryload('_plugin_parameters'),
@@ -92,7 +92,7 @@ def main():
         ).all()
 
     # Find the top-level album for the gallery
-    root = session.query(models.AlbumItem).filter_by(parent_id=0).one()
+    root = session.query(models.AlbumItem).filter_by(parentId=0).one()
     json = {
         'gallery': root.__json__(omit=['derivatives']),
         'plugin_parameters': models.get_global_plugin_parameters(session),
