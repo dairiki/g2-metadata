@@ -1,9 +1,12 @@
 # coding: utf-8
 from calendar import timegm
 from datetime import datetime
-from itertools import chain
+from itertools import groupby
+from operator import attrgetter
 import os
+import re
 
+import phpserialize
 from sqlalchemy import (
     Column,
     ForeignKey,
@@ -68,11 +71,20 @@ class Entity(Base):
 
     link_path = association_proxy('link', 'path')
 
+    _plugin_parameters = relationship(
+        'PluginParameterMap',
+        order_by=('[PluginParameterMap.plugin_type,'
+                  ' PluginParameterMap.plugin_id]'))
+
+    @property
+    def plugin_parameters(self):
+        # Note: Only Albums and Users seem to have plugin_parameters
+        return _plugin_parameters_to_dict(self._plugin_parameters)
+
     _extra_json_attrs = ['link_path']
 
     def __repr__(self):
         return "<%s[%d]>" % (self.__class__.__name__, self.entity_id)
-
 
     def __json__(self, omit=()):
         omit = frozenset(omit)
@@ -92,7 +104,7 @@ class Entity(Base):
         def to_json(obj):
             if hasattr(obj, '__json__'):
                 return obj.__json__(omit)
-            elif hasattr(obj, '__iter__'):
+            elif not isinstance(obj, dict) and hasattr(obj, '__iter__'):
                 return list(map(to_json, obj))
             return obj
 
@@ -279,6 +291,7 @@ class AlbumItem(Item):
 
     _extra_json_attrs = Item._extra_json_attrs + [
         'hilight',
+        'plugin_parameters',
         ]
 
 
@@ -410,6 +423,10 @@ class User(Entity):
     language = Column('g_language', String(128))
     locked = Column('g_locked', Integer, server_default=text("'0'"))
 
+    _extra_json_attrs = Entity._extra_json_attrs + [
+        'plugin_parameters',
+        ]
+
 
 class Group(Entity):
     __tablename__ = 'g2_Group'
@@ -423,6 +440,91 @@ class Group(Entity):
 
     users = relationship(User, secondary=t_UserGroupMap,
                          backref='groups')
+
+
+class PluginMap(Base):
+    __tablename__ = 'g2_PluginMap'
+
+    plugin_type = Column('g_pluginType', String(32), primary_key=True,
+                         nullable=False)
+    plugin_id = Column('g_pluginId', String(32), primary_key=True,
+                       nullable=False)
+    active = Column('g_active', Integer, nullable=False,
+                    server_default=text("'0'"))
+
+
+t_g2_PluginPackageMap = Table(
+    'g2_PluginPackageMap', metadata,
+    Column('g_pluginType', String(32), nullable=False, index=True),
+    Column('g_pluginId', String(32), nullable=False),
+    Column('g_packageName', String(32), nullable=False),
+    Column('g_packageVersion', String(32), nullable=False),
+    Column('g_packageBuild', String(32), nullable=False),
+    Column('g_locked', Integer, nullable=False, server_default=text("'0'"))
+)
+
+
+class PluginParameterMap(Base):
+    __tablename__ = 'g2_PluginParameterMap'
+    plugin_type = Column('g_pluginType', String(32), primary_key=True,
+                         nullable=False)
+    plugin_id = Column('g_pluginId', String(32), primary_key=True,
+                       nullable=False)
+    item_id = Column('g_itemId', ForeignKey(Entity.entity_id),
+                     primary_key=True,
+                     nullable=False, server_default=text("'0'"))
+
+    parameter_name = Column('g_parameterName', String(128), primary_key=True,
+                            nullable=False)
+
+    parameter_value = Column('g_parameterValue', Text, nullable=False)
+
+    __table_args__ = (
+        Index('g2_PluginParameterMap_12808',
+              'g_pluginType', 'g_pluginId', 'g_itemId'),
+        )
+
+
+def _neaten_php_value(value):
+    # Convert things that looks like lists back to lists
+    #
+    # Also convert empty dicts to ``None``
+    #
+    if isinstance(value, dict):
+        if len(value) == 0:
+            return None
+        elif set(value.keys()) == set(range(len(value))):
+            return [_neaten_php_value(value[i]) for i in range(len(value))]
+    return value
+
+
+def _maybe_php_deserialize(value):
+    try:
+        value = phpserialize.loads(value)
+    except ValueError:
+        return value
+    else:
+        value = _neaten_php_value(value)
+
+
+def _plugin_parameters_to_dict(plugin_parameters):
+    parameters = sorted(plugin_parameters,
+                        key=attrgetter('plugin_type', 'plugin_id'))
+    by_plugin = {}
+    for ptype, pt_params in groupby(parameters, attrgetter('plugin_type')):
+        by_plugin[ptype] = {}
+        for pid, params in groupby(pt_params, attrgetter('plugin_id')):
+            items = map(attrgetter('parameter_name', 'parameter_value'),
+                        params)
+            pdict = dict((name, _maybe_php_deserialize(value))
+                         for name, value in items)
+            by_plugin[ptype][pid] = pdict
+        return by_plugin
+
+
+def get_global_plugin_parameters(session):
+    return _plugin_parameters_to_dict(
+        session.query(PluginParameterMap).filter_by(item_id=0))
 
 
 class AccessMap(Base):
@@ -575,37 +677,6 @@ t_g2_PermissionSetMap = Table(
     Column('g_description', String(255)),
     Column('g_bits', Integer, nullable=False, server_default=text("'0'")),
     Column('g_flags', Integer, nullable=False, server_default=text("'0'"))
-)
-
-
-class PluginMap(Base):
-    __tablename__ = 'g2_PluginMap'
-
-    g_pluginType = Column(String(32), primary_key=True, nullable=False)
-    g_pluginId = Column(String(32), primary_key=True, nullable=False)
-    g_active = Column(Integer, nullable=False, server_default=text("'0'"))
-
-
-t_g2_PluginPackageMap = Table(
-    'g2_PluginPackageMap', metadata,
-    Column('g_pluginType', String(32), nullable=False, index=True),
-    Column('g_pluginId', String(32), nullable=False),
-    Column('g_packageName', String(32), nullable=False),
-    Column('g_packageVersion', String(32), nullable=False),
-    Column('g_packageBuild', String(32), nullable=False),
-    Column('g_locked', Integer, nullable=False, server_default=text("'0'"))
-)
-
-
-t_g2_PluginParameterMap = Table(
-    'g2_PluginParameterMap', metadata,
-    Column('g_pluginType', String(32), nullable=False, index=True),
-    Column('g_pluginId', String(32), nullable=False),
-    Column('g_itemId', Integer, nullable=False, server_default=text("'0'")),
-    Column('g_parameterName', String(128), nullable=False),
-    Column('g_parameterValue', Text, nullable=False),
-    Index('g2_PluginParameterMap_12808', 'g_pluginType', 'g_pluginId', 'g_itemId'),
-    Index('g_pluginType', 'g_pluginType', 'g_pluginId', 'g_itemId', 'g_parameterName', unique=True)
 )
 
 

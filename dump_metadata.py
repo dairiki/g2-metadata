@@ -59,7 +59,11 @@ class TestDumper(object):
 
 
 # TODO:
-# - Album thumbnail
+#
+# - Item.plugin_settings
+# - global.plugin_settings
+# - global.settings?
+#
 # - Sidecar format?
 
 
@@ -82,13 +86,17 @@ def main():
             sa.orm.subqueryload('link'),
             sa.orm.subqueryload('subitems'),
             sa.orm.subqueryload('comments'),
+            sa.orm.subqueryload('_plugin_parameters'),
             #sa.orm.subqueryload(derivatives).joinedload('source'),
             )
         ).all()
 
     # Find the top-level album for the gallery
     root = session.query(models.AlbumItem).filter_by(parent_id=0).one()
-    json = root.__json__(omit=['derivatives'])
+    json = {
+        'gallery': root.__json__(omit=['derivatives']),
+        'plugin_parameters': models.get_global_plugin_parameters(session),
+        }
     yaml.dump(json, sys.stdout, Dumper,
               width=65,
               default_flow_style=False,
