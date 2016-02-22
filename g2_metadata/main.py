@@ -60,8 +60,7 @@ class TestDumper(object):
 
 # TODO:
 #
-# - Item.plugin_settings
-# - global.plugin_settings
+# - subitem ordering?
 # - global.settings?
 #
 # - Sidecar format?
