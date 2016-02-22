@@ -70,6 +70,10 @@ class Entity(Base):
 
     _extra_json_attrs = ['link_path']
 
+    def __repr__(self):
+        return "<%s[%d]>" % (self.__class__.__name__, self.entity_id)
+
+
     def __json__(self, omit=()):
         omit = frozenset(omit)
         if not hasattr(self, '_json_cache'):
@@ -77,11 +81,13 @@ class Entity(Base):
         args = (omit,)
         if args in self._json_cache:
             return self._json_cache[args]
-        column_attrs = inspect(self).mapper.columns.keys()
 
+        column_attrs = inspect(self).mapper.columns.keys()
         data = dict((attr, getattr(self, attr))
                     for attr in column_attrs
                     if not attr.startswith('_') and attr not in omit)
+
+        self._json_cache[args] = data
 
         def to_json(obj):
             if hasattr(obj, '__json__'):
@@ -94,7 +100,6 @@ class Entity(Base):
             if attr not in omit:
                 data[attr] = to_json(getattr(self, attr))
 
-        self._json_cache[args] = data
         return data
 
 
@@ -126,19 +131,15 @@ class FileSystemEntity(ChildEntity):
     @property
     def path(self):
         parent = self.parent
-        if parent:
+        if isinstance(parent, FileSystemEntity):
             assert self.path_component
-            if hasattr(parent, 'path'):
-                return os.path.join(parent.path, self.path_component)
-            else:
-                return None
+            return os.path.join(parent.path, self.path_component)
         else:
             assert self.path_component is None
             return ''
 
     _extra_json_attrs = ChildEntity._extra_json_attrs + [
         'path',
-        'derivatives',
         ]
 
 
@@ -243,10 +244,17 @@ class Item(FileSystemEntity):
         primaryjoin='Item.entity_id == remote(foreign(Comment.parent_id))',
         order_by='Comment.date')
 
+    derivatives = relationship(
+        'Derivative',
+        primaryjoin='Item.entity_id == remote(foreign(Derivative.parent_id))',
+        order_by='Derivative.derivative_order')
+
     _extra_json_attrs = FileSystemEntity._extra_json_attrs + [
         'is_hidden',
         'subitems',
-        'comments']
+        'comments',
+        'derivatives',
+        ]
 
 
 class AlbumItem(Item):
@@ -258,6 +266,20 @@ class AlbumItem(Item):
     theme = Column('g_theme', String(32))
     order_by = Column('g_orderBy', String(128))
     order_direction = Column('g_orderDirection', String(32))
+
+    @property
+    def hilight(self):
+        if self.derivatives:
+            thumbnail, = self.derivatives
+            hilight = thumbnail.source
+            while isinstance(hilight, Derivative):
+                hilight = hilight.source
+            assert isinstance(hilight, Item)
+            return hilight
+
+    _extra_json_attrs = Item._extra_json_attrs + [
+        'hilight',
+        ]
 
 
 class PhotoItem(Item):
@@ -318,14 +340,14 @@ class UnknownItem(Item):
                        server_default=text("'0'"))
 
 
-class Derivative(Entity):
+class Derivative(ChildEntity):
     __tablename__ = 'g2_Derivative'
     entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
                        server_default=text("'0'"))
     __mapper_args__ = {'inherit_condition': Entity.entity_id == entity_id}
 
     derivative_source_id = Column('g_derivativeSourceId',
-                                  ForeignKey(FileSystemEntity.entity_id),
+                                  ForeignKey(Entity.entity_id),
                                   nullable=False, index=True,
                                   server_default=text("'0'"))
     derivative_operations = Column('g_derivativeOperations', String(255))
@@ -340,9 +362,11 @@ class Derivative(Entity):
     post_filter_operations = Column('g_postFilterOperations', String(255))
     is_broken = Column('g_isBroken', Integer)
 
-    source = relationship(FileSystemEntity,
-                          foreign_keys=[derivative_source_id],
-                          backref='derivatives')
+    source = relationship(Entity, foreign_keys=[derivative_source_id])
+
+    _extra_json_attrs = ChildEntity._extra_json_attrs + [
+        'source',
+        ]
 
 
 class DerivativeImage(Derivative):
@@ -353,6 +377,7 @@ class DerivativeImage(Derivative):
                        primary_key=True, server_default=text("'0'"))
     width = Column('g_width', Integer)
     height = Column('g_height', Integer)
+
 
 t_g2_DerivativePrefsMap = Table(
     'g2_DerivativePrefsMap', metadata,
@@ -416,6 +441,7 @@ class AccessSubscriberMap(Base):
 
 
 class CacheMap(Base):
+    # b_type is always 'page'
     __tablename__ = 'g2_CacheMap'
     __table_args__ = (
         Index('g2_CacheMap_21979', 'g_userId', 'g_timestamp', 'g_isEmpty'),
@@ -430,14 +456,15 @@ class CacheMap(Base):
     g_isEmpty = Column(Integer)
 
 
-t_g2_CustomFieldMap = Table(
-    'g2_CustomFieldMap', metadata,
-    Column('g_itemId', Integer, nullable=False, index=True, server_default=text("'0'")),
-    Column('g_field', String(128), nullable=False),
-    Column('g_value', String(255)),
-    Column('g_setId', Integer),
-    Column('g_setType', Integer)
-)
+# Empty
+# t_g2_CustomFieldMap = Table(
+#     'g2_CustomFieldMap', metadata,
+#     Column('g_itemId', Integer, nullable=False, index=True, server_default=text("'0'")),
+#     Column('g_field', String(128), nullable=False),
+#     Column('g_value', String(255)),
+#     Column('g_setId', Integer),
+#     Column('g_setType', Integer)
+# )
 
 
 class DescendentCountsMap(Base):
@@ -473,12 +500,13 @@ t_g2_ExifPropertiesMap = Table(
 )
 
 
-class ExternalIdMap(Base):
-    __tablename__ = 'g2_ExternalIdMap'
+# Empty
+# class ExternalIdMap(Base):
+#     __tablename__ = 'g2_ExternalIdMap'
 
-    g_externalId = Column(String(128), primary_key=True, nullable=False)
-    g_entityType = Column(String(32), primary_key=True, nullable=False)
-    g_entityId = Column(Integer, nullable=False, server_default=text("'0'"))
+#     g_externalId = Column(String(128), primary_key=True, nullable=False)
+#     g_entityType = Column(String(32), primary_key=True, nullable=False)
+#     g_entityId = Column(Integer, nullable=False, server_default=text("'0'"))
 
 
 t_g2_FactoryMap = Table(

@@ -9,7 +9,8 @@ import yaml
 
 import models
 
-engine = sa.create_engine('mysql://gallery@furry/gallery2?charset=utf8')
+engine = sa.create_engine('mysql://gallery@furry/gallery2?charset=utf8',
+                          echo=False)
 Session = sa.orm.sessionmaker(bind=engine)
 session = Session()
 
@@ -65,18 +66,25 @@ class TestDumper(object):
 def main():
     # Precache all the items in the gallery, so we don't have to query each one
     # individually.
-    cache_items = session.query(models.Item)\
-                         .with_polymorphic([
-                             models.AlbumItem,
-                             models.LinkItem,
-                             models.MovieItem,
-                             models.PhotoItem,
-                             ])\
-                         .options(sa.orm.subqueryload('parent'),
-                                  sa.orm.subqueryload('link'),
-                                  sa.orm.subqueryload('subitems'),
-                                  sa.orm.subqueryload('comments'))\
-                         .all()
+    derivatives = models.Item.derivatives.of_type(
+        sa.orm.with_polymorphic(models.Derivative, [models.DerivativeImage],
+                                aliased=True))
+    cache_items = (
+        session.query(models.Item)
+        .with_polymorphic([
+            models.AlbumItem,
+            models.LinkItem,
+            models.MovieItem,
+            models.PhotoItem,
+            ])
+        .options(
+            sa.orm.subqueryload('parent'),
+            sa.orm.subqueryload('link'),
+            sa.orm.subqueryload('subitems'),
+            sa.orm.subqueryload('comments'),
+            #sa.orm.subqueryload(derivatives).joinedload('source'),
+            )
+        ).all()
 
     # Find the top-level album for the gallery
     root = session.query(models.AlbumItem).filter_by(parent_id=0).one()
