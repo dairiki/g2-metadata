@@ -4,7 +4,6 @@ from datetime import datetime
 from itertools import groupby
 from operator import attrgetter
 import os
-import re
 
 import phpserialize
 from sqlalchemy import (
@@ -61,20 +60,19 @@ class Entity(Base):
         'polymorphic_identity': 'GalleryEntity',
         }
 
-    entity_id = Column('g_id', Integer, primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(Integer, primary_key=True, server_default=text("'0'"))
     creationTimestamp = Column(Timestamp, nullable=False, index=True,
                                server_default=text("'0'"))
     isLinkable = Column(Integer, nullable=False, index=True,
                         server_default=text("'0'"))
-    linkId = Column(ForeignKey(entity_id), index=True)
+    linkId = Column(ForeignKey(id), index=True)
     modificationTimestamp = Column(Timestamp, nullable=False, index=True,
                                    server_default=text("'0'"))
     serialNumber = Column(Integer, nullable=False, index=True,
                           server_default=text("'0'"))
     onLoadHandlers = Column(String(128))
 
-    linked_entity = relationship('Entity', remote_side=[entity_id],
+    linked_entity = relationship('Entity', remote_side=[id],
                                  lazy='subquery',
                                  backref='linked_from')
 
@@ -94,7 +92,7 @@ class Entity(Base):
     _extra_json_attrs = ['link_path']
 
     def __repr__(self):
-        return "<%s[%d]>" % (self.__class__.__name__, self.entity_id)
+        return "<%s[%d]>" % (self.__class__.__name__, self.id)
 
     def __json__(self, omit=()):
         omit = frozenset(omit)
@@ -128,26 +126,25 @@ class Entity(Base):
 class ChildEntity(Entity):
     __tablename__ = 'g2_ChildEntity'
 
-    entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Entity.id), primary_key=True,
+                server_default=text("'0'"))
     __mapper_args__ = {
         'polymorphic_identity': 'GalleryChildEntity',
-        'inherit_condition': Entity.entity_id == entity_id,
+        'inherit_condition': Entity.id == id,
         }
 
-    parentId = Column(ForeignKey(Entity.entity_id), nullable=False, index=True,
+    parentId = Column(ForeignKey(Entity.id), nullable=False, index=True,
                       server_default=text("'0'"))
 
-    parent = relationship(Entity, primaryjoin=parentId == Entity.entity_id,
+    parent = relationship(Entity, primaryjoin=parentId == Entity.id,
                           backref='children')
 
 
 class FileSystemEntity(ChildEntity):
     __tablename__ = 'g2_FileSystemEntity'
 
-    entity_id = Column('g_id', ForeignKey(ChildEntity.entity_id),
-                       primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(ChildEntity.id), primary_key=True,
+                server_default=text("'0'"))
     pathComponent = Column(String(128), index=True)
 
     @property
@@ -169,8 +166,8 @@ class Comment(ChildEntity):
     __tablename__ = 'g2_Comment'
     __mapper_args__ = {'polymorphic_identity': 'GalleryComment'}
 
-    entity_id = Column('g_id', ForeignKey(ChildEntity.entity_id),
-                       primary_key=True, server_default=text("'0'"))
+    id = Column(ForeignKey(ChildEntity.id), primary_key=True,
+                server_default=text("'0'"))
     commenterId = Column(Integer, nullable=False, server_default=text("'0'"))
     host = Column(String(128), nullable=False)
     subject = Column(String(128))
@@ -185,8 +182,7 @@ class ThumbnailImage(FileSystemEntity):
     __tablename__ = 'g2_ThumbnailImage'
     __mapper_args__ = {'polymorphic_identity': 'ThumbnailImage'}
 
-    entity_id = Column('g_id', Integer, ForeignKey(FileSystemEntity.entity_id),
-                       primary_key=True)
+    id = Column(Integer, ForeignKey(FileSystemEntity.id), primary_key=True)
     mimeType = Column(String(128))
     size = Column(Integer)
     width = Column(Integer)
@@ -196,10 +192,10 @@ class ThumbnailImage(FileSystemEntity):
 
 t_Item = Table(
     'g2_Item', metadata,
-    Column('g_id', ForeignKey(FileSystemEntity.entity_id),
+    Column('g_id', ForeignKey(FileSystemEntity.id),
            primary_key=True,
            server_default=text("'0'"),
-           key='entity_id'),
+           key='id'),
     Column('g_canContainChildren', Integer,
            nullable=False, server_default=text("'0'"),
            key='canContainChildren'),
@@ -228,7 +224,7 @@ t_Item = Table(
 
 t_ItemAttributesMap = Table(
     'g2_ItemAttributesMap', metadata,
-    Column('g_itemId', ForeignKey(t_Item.c.entity_id),
+    Column('g_itemId', ForeignKey(t_Item.c.id),
            primary_key=True, server_default=text("'0'"),
            key='_attributes_id'),
     Column('g_viewCount', Integer,
@@ -241,7 +237,7 @@ t_ItemAttributesMap = Table(
 
 t_ItemHiddenMap = Table(
     'g2_ItemHiddenMap', metadata,
-    Column('g_itemId', ForeignKey(t_Item.c.entity_id), primary_key=True,
+    Column('g_itemId', ForeignKey(t_Item.c.id), primary_key=True,
            key='_hidden_id'),
     )
 
@@ -256,17 +252,17 @@ class Item(FileSystemEntity):
 
     subitems = relationship(
         'Item',
-        primaryjoin='Item.entity_id == remote(foreign(Item.parentId))',
+        primaryjoin='Item.id == remote(foreign(Item.parentId))',
         order_by='Item.orderWeight')
 
     comments = relationship(
         'Comment',
-        primaryjoin='Item.entity_id == remote(foreign(Comment.parentId))',
+        primaryjoin='Item.id == remote(foreign(Comment.parentId))',
         order_by='Comment.date')
 
     derivatives = relationship(
         'Derivative',
-        primaryjoin='Item.entity_id == remote(foreign(Derivative.parentId))',
+        primaryjoin='Item.id == remote(foreign(Derivative.parentId))',
         order_by='Derivative.derivativeOrder')
 
     _extra_json_attrs = FileSystemEntity._extra_json_attrs + [
@@ -281,8 +277,8 @@ class AlbumItem(Item):
     __tablename__ = 'g2_AlbumItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryAlbumItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     theme = Column(String(32))
     orderBy = Column(String(128))
     orderDirection = Column(String(32))
@@ -307,8 +303,8 @@ class PhotoItem(Item):
     __tablename__ = 'g2_PhotoItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryPhotoItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     width = Column(Integer)
     height = Column(Integer)
 
@@ -317,8 +313,8 @@ class MovieItem(Item):
     __tablename__ = 'g2_MovieItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryMovieItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     width = Column(Integer)
     height = Column(Integer)
     duration = Column(Integer)
@@ -328,8 +324,8 @@ class LinkItem(Item):
     __tablename__ = 'g2_LinkItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryLinkItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     link = Column(Text, nullable=False)
 
 
@@ -337,8 +333,8 @@ class AnimationItem(Item):
     __tablename__ = 'g2_AnimationItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryAnimationItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     width = Column(Integer)
     height = Column(Integer)
 
@@ -347,8 +343,8 @@ class DataItem(Item):
     __tablename__ = 'g2_DataItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryDataItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
     mimeType = Column(String(128))
     size = Column(Integer)
 
@@ -357,17 +353,17 @@ class UnknownItem(Item):
     __tablename__ = 'g2_UnknownItem'
     __mapper_args__ = {'polymorphic_identity': 'GalleryUnknownItem'}
 
-    entity_id = Column('g_id', ForeignKey(Item.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Item.id), primary_key=True,
+                server_default=text("'0'"))
 
 
 class Derivative(ChildEntity):
     __tablename__ = 'g2_Derivative'
-    entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
-                       server_default=text("'0'"))
-    __mapper_args__ = {'inherit_condition': Entity.entity_id == entity_id}
+    id = Column(ForeignKey(ChildEntity.id), primary_key=True,
+                server_default=text("'0'"))
+    __mapper_args__ = {'inherit_condition': ChildEntity.id == id}
 
-    derivativeSourceId = Column(ForeignKey(Entity.entity_id),
+    derivativeSourceId = Column(ForeignKey(Entity.id),
                                 nullable=False, index=True,
                                 server_default=text("'0'"))
     derivativeOperations = Column(String(255))
@@ -391,8 +387,8 @@ class DerivativeImage(Derivative):
     __tablename__ = 'g2_DerivativeImage'
     __mapper_args__ = {'polymorphic_identity': 'GalleryDerivativeImage'}
 
-    entity_id = Column('g_id', ForeignKey(Derivative.entity_id),
-                       primary_key=True, server_default=text("'0'"))
+    id = Column(ForeignKey(Derivative.id),
+                primary_key=True, server_default=text("'0'"))
     width = Column(Integer)
     height = Column(Integer)
 
@@ -406,21 +402,12 @@ t_g2_DerivativePrefsMap = Table(
 )
 
 
-t_UserGroupMap = Table(
-    'g2_UserGroupMap', metadata,
-    Column('g_userId', ForeignKey('g2_User.g_id'),
-           nullable=False, index=True, server_default=text("'0'")),
-    Column('g_groupId', ForeignKey('g2_Group.g_id'),
-           nullable=False, index=True, server_default=text("'0'")),
-    )
-
-
 class User(Entity):
     __tablename__ = 'g2_User'
     __mapper_args__ = {'polymorphic_identity': 'GalleryUser'}
 
-    entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Entity.id), primary_key=True,
+                server_default=text("'0'"))
     userName = Column(String(32), nullable=False, unique=True)
     fullName = Column(String(128))
     hashedPassword = Column(String(128))
@@ -437,13 +424,21 @@ class Group(Entity):
     __tablename__ = 'g2_Group'
     __mapper_args__ = {'polymorphic_identity': 'GalleryGroup'}
 
-    entity_id = Column('g_id', ForeignKey(Entity.entity_id), primary_key=True,
-                       server_default=text("'0'"))
+    id = Column(ForeignKey(Entity.id), primary_key=True,
+                server_default=text("'0'"))
     groupType = Column(Integer, nullable=False, server_default=text("'0'"))
     groupName = Column(String(128), unique=True)
 
-    users = relationship(User, secondary=t_UserGroupMap,
-                         backref='groups')
+
+t_UserGroupMap = Table(
+    'g2_UserGroupMap', metadata,
+    Column('g_userId', ForeignKey(User.id), nullable=False, index=True,
+           server_default=text("'0'")),
+    Column('g_groupId', ForeignKey(Group.id), nullable=False, index=True,
+           server_default=text("'0'")),
+    )
+
+Group.users = relationship(User, secondary=t_UserGroupMap, backref='groups')
 
 
 class PluginMap(Base):
@@ -469,7 +464,7 @@ class PluginParameterMap(Base):
     __tablename__ = 'g2_PluginParameterMap'
     pluginType = Column(String(32), primary_key=True, nullable=False)
     pluginId = Column(String(32), primary_key=True, nullable=False)
-    itemId = Column(ForeignKey(Entity.entity_id), primary_key=True,
+    itemId = Column(ForeignKey(Entity.id), primary_key=True,
                     nullable=False,
                     server_default=text("'0'"))
 
