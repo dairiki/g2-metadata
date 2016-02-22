@@ -1,8 +1,13 @@
 Description
 ===========
 
-Dump gallery2_ image gallery metadata
+Dump gallery2_ image gallery metadata to a huge YaML file.
 
+The idea being that once the data is out of MySQL it should be easier to
+write a script to massage the metadata into a format usable by some other
+gallery generator (e.g. sigal_.)
+
+This is throw-away “works for me” code.  Your mileage may vary.
 
 Introduction
 ============
@@ -25,5 +30,5 @@ Authors
 `Jeff Dairiki`_
 
 .. _gallery2: http://galleryproject.org/
-
+.. _sigal: http://sigal.saimon.org/
 .. _Jeff Dairiki: mailto:dairiki@dairiki.org
