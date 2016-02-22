@@ -1,3 +1,6 @@
 *~
 *.pyc
 /.cache/
+/g2_metadata.egg-info/
+/build/
+/dist/
