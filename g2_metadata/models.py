@@ -793,15 +793,3 @@ class dbtest1Schema(Base):
     g_major = Column(Integer, nullable=False, server_default=text("'0'"))
     g_minor = Column(Integer, nullable=False, server_default=text("'0'"))
     g_testCol = Column(String(128))
-
-
-def _fix_nl(s):
-    if isinstance(s, basestring):
-        return s.replace('\r\n', '\n')
-    return s
-
-def _fmt_timestamp(ts):
-    if ts is None:
-        return None
-    dt = datetime.utcfromtimestamp(ts)
-    return dt.isoformat() + 'Z'
