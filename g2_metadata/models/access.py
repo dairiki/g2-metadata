@@ -53,6 +53,7 @@ t_UserGroupMap = g_Table(
     )
 
 Group.users = relationship(User, secondary=t_UserGroupMap, backref='groups')
+Group._extra_json_attrs = Group._extra_json_attrs + ['users']
 
 
 t_PermissionSetMap = g_Table(
