@@ -18,9 +18,12 @@ from sqlalchemy import (
     Text,
     text,
     )
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declared_attr
 
 from .base import Base
 from .entity import Entity
+
 
 class PluginMap(Base):
     pluginType = Column(String(32), primary_key=True, nullable=False)
@@ -45,15 +48,28 @@ class PluginParameterMap(Base):
 # NB: See also t_PluginPackageMap in .cruft which we are currently not using.
 
 
+class PluginParametersMixin(object):
+    @declared_attr
+    def _plugin_parameters(cls):
+        return relationship(PluginParameterMap,
+                            order_by=[PluginParameterMap.pluginType,
+                                      PluginParameterMap.pluginId])
+
+    @property
+    def plugin_parameters(self):
+        # Note: Only Albums and Users seem to have plugin_parameters
+        return _plugin_parameters_to_dict(self._plugin_parameters)
+
+
 def get_global_plugin_parameters(session):
     """ Get nested dict containing all the global plugin paramters.
 
     """
-    return plugin_parameters_to_dict(
+    return _plugin_parameters_to_dict(
         session.query(PluginParameterMap).filter_by(itemId=0))
 
 
-def plugin_parameters_to_dict(plugin_parameters):
+def _plugin_parameters_to_dict(plugin_parameters):
     """ Convert a sequence of ``PluginParamterMap`` instances to nested dict.
 
     Values which look to be phpserialized are unserialized.
@@ -88,8 +104,8 @@ def _neaten_php_value(value):
 
 def _maybe_php_deserialize(value):
     try:
-        value = phpserialize.loads(value)
+        deserialized_value = phpserialize.loads(value)
     except ValueError:
         return value
     else:
-        value = _neaten_php_value(value)
+        return _neaten_php_value(deserialized_value)
