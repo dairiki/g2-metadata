@@ -1,5 +1,11 @@
 #! -*- coding: utf-8 -*-
 
+from collections import (
+    defaultdict,
+    OrderedDict,
+    Mapping,
+    Sequence,
+    )
 from datetime import datetime
 import re
 import sys
@@ -16,6 +22,19 @@ session = Session()
 
 
 class Dumper(yaml.Dumper):
+    _anchor_ids = defaultdict(lambda: 1)
+
+    def generate_anchor(self, node):
+        # To aid readability, add type to anchors to our custom tags
+        tag = node.tag
+        if tag.startswith('!'):
+            prefix = tag[1:].lower()
+        else:
+            prefix = 'id'
+        anchor_id = self._anchor_ids[prefix]
+        self._anchor_ids[prefix] = anchor_id + 1
+        return "%s%03d" % (prefix, anchor_id)
+
     def represent_datetime(self, data):
         # Hack to get datetimes with 'T' separator, and 'Z' zone
         return self.represent_scalar(
@@ -35,9 +54,35 @@ class Dumper(yaml.Dumper):
     def represent_long(self, data):
         return self.represent_scalar(u'tag:yaml.org,2002:int', unicode(data))
 
+    omit_attrs = ('derivatives', 'children')     # FIXME
+
+    def represent_object(self, obj):
+        if hasattr(obj, '__yaml_representation__'):
+            return obj.__yaml_representation__(self)
+        elif isinstance(obj, OrderedDict):
+            # Prevent yaml from sorting keys
+            return self.represent_mapping(
+                'tag:yaml.org,2002:map', obj.items(), False)
+        elif isinstance(obj, Mapping):
+            # handle, e.g., sa.orm.collections.CollectionAdapter
+            return self.represent_mapping(
+                'tag:yaml.org,2002:map', obj, False)
+        elif isinstance(obj, Sequence):
+            # handle, e.g., sa.orm.collections.InstrumentedList
+            return self.represent_sequence(
+                'tag:yaml.org,2002:seq', obj, False)
+        else:
+            raise RuntimeError(
+                "Can not represent object {0!r}"
+                " of type {0.__class__.__module__}.{0.__class__.__name__}"
+                " with mro {0.__class__.__mro__!r}"
+                .format(obj))
+
+
 Dumper.add_representer(datetime, Dumper.represent_datetime)
 Dumper.add_representer(unicode, Dumper.represent_unicode)
 Dumper.add_representer(long, Dumper.represent_long)
+Dumper.add_multi_representer(object, Dumper.represent_object)
 
 
 class TestDumper(object):
@@ -69,9 +114,9 @@ class TestDumper(object):
 def main():
     # Precache all the items in the gallery, so we don't have to query each one
     # individually.
-    derivatives = models.Item.derivatives.of_type(
-        sa.orm.with_polymorphic(models.Derivative, [models.DerivativeImage],
-                                aliased=True))
+    # derivatives = models.Item.derivatives.of_type(
+    #    sa.orm.with_polymorphic(models.Derivative, [models.DerivativeImage],
+    #                            aliased=True))
     cache_items = (
         session.query(models.Item)
         .with_polymorphic([
@@ -82,25 +127,28 @@ def main():
             ])
         .options(
             sa.orm.subqueryload('parent'),
-            sa.orm.subqueryload('linked_entity'),
+            sa.orm.subqueryload('linked_item'),
+            sa.orm.subqueryload('linked_from_item'),
             sa.orm.subqueryload('subitems'),
             sa.orm.subqueryload('comments'),
             #sa.orm.subqueryload('_plugin_parameters'),
             sa.orm.subqueryload(models.AlbumItem._plugin_parameters),
             sa.orm.subqueryload(models.User._plugin_parameters),
+            sa.orm.subqueryload(models.ChildEntity.parent),
             sa.orm.subqueryload('owner'),
-            sa.orm.subqueryload('accessList').joinedload('_identity'),
+            sa.orm.subqueryload('accessList').joinedload('userOrGroup'),
             #sa.orm.subqueryload(derivatives).joinedload('source'),
             )
         ).all()
 
     # Find the top-level album for the gallery
-    root = session.query(models.AlbumItem).filter_by(parentId=0).one()
-    json = {
-        'gallery': root.__json__(omit=['derivatives']),
-        'plugin_parameters': models.get_global_plugin_parameters(session),
-        }
-    yaml.dump(json, sys.stdout, Dumper,
+    data = OrderedDict()
+    data['groups'] = session.query(models.Group).all()
+    data['users'] = session.query(models.User).all()
+    data['plugin_parameters'] = models.get_global_plugin_parameters(session)
+    data['gallery'] = session.query(models.AlbumItem).filter_by(parentId=0)\
+                                                     .one()
+    yaml.dump(data, sys.stdout, Dumper,
               width=65,
               default_flow_style=False,
               explicit_start=True)

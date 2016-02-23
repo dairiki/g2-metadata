@@ -8,12 +8,12 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    inspect,
     text,
     )
 from sqlalchemy.orm import backref, relationship
 
 from .base import Base, metadata, g_Column, g_Table
-from .util import cache_json
 from .entity import Entity
 from .plugin import PluginParametersMixin
 
@@ -29,10 +29,6 @@ class User(Entity, PluginParametersMixin):
     email = Column(String(255))
     language = Column(String(128))
     locked = Column(Integer, server_default=text("'0'"))
-
-    _extra_json_attrs = Entity._extra_json_attrs + [
-        'plugin_parameters',
-        ]
 
 
 class Group(Entity):
@@ -53,7 +49,6 @@ t_UserGroupMap = g_Table(
     )
 
 Group.users = relationship(User, secondary=t_UserGroupMap, backref='groups')
-Group._extra_json_attrs = Group._extra_json_attrs + ['users']
 
 
 t_PermissionSetMap = g_Table(
@@ -75,27 +70,8 @@ class AccessMap(Base):
                            primary_key=True, nullable=False,
                            index=True, server_default=text("'0'"))
 
-    _identity = relationship(Entity, foreign_keys=[userOrGroupId])
-
-    def __json__(self, omit=()):
-        from .item import AlbumItem, LinkItem, PhotoItem  # circdep
-        identity = self._identity
-        if identity is None:
-            assert self.userOrGroupId == 0, \
-                "missing userOrGroupid %d" % self.userOrGroupId
-            return None
-        types = {
-            User: 'user',
-            Group: 'group',
-            AlbumItem: 'album_item',
-            PhotoItem: 'album_item',
-            LinkItem: 'album_item',
-            }
-        identity_key = types[type(identity)]
-        return {
-            'permission': self.permission,
-            identity_key: identity.__json__(omit=omit),
-            }
+    # NB: this seems not always to be a User or Group
+    userOrGroup = relationship(Entity, foreign_keys=[userOrGroupId])
 
 
 class AccessSubscriberMap(Base):
@@ -108,17 +84,21 @@ class AccessSubscriberMap(Base):
 
 class AccessList(list):
     # This is all just a hack to sanely cache the return values
-    # from __json__, so that identical accessLists return the
+    # from __yaml_representation__, so that identical accessLists return the
     # same list (not just an identical list).
-    def _keyfunc(self, omit=()):
-        ids = frozenset(entry.accessListId for entry in self)
-        return (ids, frozenset(omit))
-
     _global_cache = {}
 
-    @cache_json(use_list=True, cache=_global_cache, keyfunc=_keyfunc)
-    def __json__(self, omit=()):
-        return [entry.__json__(omit) for entry in self]
+    def __yaml_representation__(self, dumper):
+        if len(self) == 0:
+            return dumper.represent_data([])  # don't alias empty lists
+        cache = self._global_cache
+        accessListId = self[0].accessListId
+        assert all(entry.accessListId == accessListId for entry in self)
+        node = cache.get(accessListId)
+        if node is None:
+            node = dumper.represent_sequence(u'tag:yaml.org,2002:seq', self)
+            cache[accessListId] = node
+        return node
 
 
 AccessMap._listed = relationship(

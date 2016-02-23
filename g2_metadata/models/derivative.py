@@ -39,10 +39,6 @@ class Derivative(ChildEntity):
 
     source = relationship(Entity, foreign_keys=[derivativeSourceId])
 
-    _extra_json_attrs = ChildEntity._extra_json_attrs + [
-        'source',
-        ]
-
 
 class DerivativeImage(Derivative):
     __mapper_args__ = {'polymorphic_identity': 'GalleryDerivativeImage'}

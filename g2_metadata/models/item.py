@@ -94,13 +94,10 @@ class Item(FileSystemEntity):
         'User', foreign_keys='[Item.ownerId]',
         )
 
-    _extra_json_attrs = FileSystemEntity._extra_json_attrs + [
-        'is_hidden',
-        'subitems',
-        'comments',
-        'derivatives',
-        'owner',
-        ]
+    linked_item = relationship('Item',
+                               primaryjoin='foreign(Entity.linkId) == remote(Item.id)',
+                               lazy='subquery',
+                               backref='linked_from_item')
 
 
 class AlbumItem(Item, PluginParametersMixin):
@@ -132,12 +129,6 @@ class AlbumItem(Item, PluginParametersMixin):
         return dict(
             (dtype, [pref.derivativeOperations for pref in prefs])
             for dtype, prefs in groupby(q, attrgetter('derivativeType')))
-
-    _extra_json_attrs = Item._extra_json_attrs + [
-        'hilight',
-        'plugin_parameters',
-        'derivative_prefs',
-        ]
 
 
 class PhotoItem(Item):

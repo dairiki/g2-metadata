@@ -15,11 +15,8 @@ from sqlalchemy import (
     text,
     )
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.associationproxy import association_proxy
-
 
 from .base import Base
-from .util import cache_json
 from .types import Timestamp
 
 
@@ -46,39 +43,8 @@ class Entity(Base):
                           server_default=text("'0'"))
     onLoadHandlers = Column(String(128))
 
-    linked_entity = relationship('Entity', remote_side=[id],
-                                 lazy='subquery',
-                                 backref='linked_from')
-
-    link_path = association_proxy('linked_entity', 'path')
-
-    _extra_json_attrs = [
-        'link_path',
-        'accessList',           # backref from .access.AccessMap._identity
-        ]
-
     def __repr__(self):
         return "<%s[%d]>" % (self.__class__.__name__, self.id)
-
-    @cache_json()
-    def __json__(self, omit=()):
-        column_attrs = inspect(self).mapper.columns.keys()
-        data = dict((attr, getattr(self, attr))
-                    for attr in column_attrs
-                    if not attr.startswith('_') and attr not in omit)
-
-        def to_json(obj):
-            if hasattr(obj, '__json__'):
-                return obj.__json__(omit)
-            elif not isinstance(obj, dict) and hasattr(obj, '__iter__'):
-                return list(map(to_json, obj))
-            return obj
-
-        for attr in self._extra_json_attrs:
-            if attr not in omit:
-                data[attr] = to_json(getattr(self, attr))
-
-        return data
 
 
 class ChildEntity(Entity):
@@ -110,10 +76,6 @@ class FileSystemEntity(ChildEntity):
         else:
             assert self.pathComponent is None
             return ''
-
-    _extra_json_attrs = ChildEntity._extra_json_attrs + [
-        'path',
-        ]
 
 
 class Comment(ChildEntity):

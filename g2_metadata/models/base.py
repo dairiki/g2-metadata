@@ -16,6 +16,41 @@ class Base(object):
     def __tablename__(cls):
         return TABLE_PREFIX + cls.__name__
 
+    @property
+    def __yaml_attributes__(self):
+        cls = type(self)
+        if not hasattr(cls, '_yaml_attributes'):
+            attrs = set(attr for attr in dir(self) if not attr.startswith('_'))
+            attrs.discard('metadata')
+            columns = sa.inspect(self).mapper.columns
+
+            def order(attr):
+                order = {
+                    'path': -1,
+                    'comments': 1,
+                    'owner': 2,
+                    'accessList': 3,
+                    'plugin_parameters': 4,
+                    'derivative_prefs': 4,
+                    'subitems': 5,
+                    'hilight': 6,
+                    'parent': 7,
+                    }.get(attr)
+                if order is None:
+                    # Plain column attributes before relations
+                    order = 0 if attr in columns else 1
+                return order, attr
+            cls._yaml_attributes = sorted(attrs, key=order)
+        return cls._yaml_attributes
+
+    def __yaml_representation__(self, dumper):
+        tag = '!%s' % self.__class__.__name__
+        omit_attrs = getattr(dumper, 'omit_attrs', ())  # FIXME: hackish
+        items = [(attr, getattr(self, attr))
+                 for attr in self.__yaml_attributes__
+                 if attr not in omit_attrs]
+        return dumper.represent_mapping(tag, items, False)
+
 Base = declarative_base(cls=Base)
 metadata = Base.metadata
 
