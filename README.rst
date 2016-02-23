@@ -1,13 +1,8 @@
 Description
 ===========
 
-Dump gallery2_ image gallery metadata to a huge YaML file.
+Dump gallery2_ image gallery meta-data to a huge YaML file.
 
-The idea being that once the data is out of MySQL it should be easier to
-write a script to massage the metadata into a format usable by some other
-gallery generator (e.g. sigal_.)
-
-This is throw-away “works for me” code.  Your mileage may vary.
 
 Introduction
 ============
@@ -17,11 +12,17 @@ I have a bunch of photographs in a Gallery photo archive.
 The Gallery project has long since been end-of-lifed,
 so it is time to get to pictures into some other sort of gallery.
 
-Gallery stores all its image metadata (other than EXIF data)
+Gallery stores all its image meta-data (other than EXIF data)
 in a MySQL database.
 
 This package provides a command-line utility which can be used to
-dump most of that metadata to a (giant) YAML file.
+dump most of that meta-data to a (giant) YAML file,
+the idea being that once the data is out of MySQL it should be easier to
+write a script to massage the meta-data into a format usable by some other
+gallery generator (e.g. sigal_.)
+
+.. warning::
+   This is throw-away “works for me” code.  Your mileage may vary.
 
 
 Authors
