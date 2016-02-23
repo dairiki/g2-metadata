@@ -15,21 +15,6 @@ from sqlalchemy import (
 from .base import Base, metadata, g_Column, g_Table
 
 
-class AccessMap(Base):
-    accessListId = Column(Integer, primary_key=True, nullable=False,
-                          index=True, server_default=text("'0'"))
-    permission = Column(Integer, nullable=False, index=True,
-                        server_default=text("'0'"))
-    userOrGroupId = Column(Integer, primary_key=True, nullable=False,
-                           index=True, server_default=text("'0'"))
-
-
-class AccessSubscriberMap(Base):
-    itemId = Column(Integer, primary_key=True, server_default=text("'0'"))
-    accessListId = Column(Integer, nullable=False, index=True,
-                          server_default=text("'0'"))
-
-
 class CacheMap(Base):
     key = Column(String(32), primary_key=True, nullable=False)
     value = Column(String)
@@ -144,16 +129,6 @@ class MimeTypeMap(Base):
     extension = Column(String(32), primary_key=True)
     mimeType = Column(String(128))
     viewable = Column(Integer)
-
-
-t_PermissionSetMap = g_Table(
-    'PermissionSetMap', metadata,
-    g_Column('module', String(128), nullable=False),
-    g_Column('permission', String(128), nullable=False, unique=True),
-    g_Column('description', String(255)),
-    g_Column('bits', Integer, nullable=False, server_default=text("'0'")),
-    g_Column('flags', Integer, nullable=False, server_default=text("'0'"))
-    )
 
 
 t_PluginPackageMap = g_Table(

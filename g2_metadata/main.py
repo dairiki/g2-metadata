@@ -86,6 +86,8 @@ def main():
             sa.orm.subqueryload('subitems'),
             sa.orm.subqueryload('comments'),
             sa.orm.subqueryload('_plugin_parameters'),
+            sa.orm.subqueryload('owner'),
+            sa.orm.subqueryload('accessList').joinedload('_identity'),
             #sa.orm.subqueryload(derivatives).joinedload('source'),
             )
         ).all()

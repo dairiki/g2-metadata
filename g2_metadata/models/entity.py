@@ -3,6 +3,7 @@
 """
 from __future__ import absolute_import
 
+from functools import wraps
 from itertools import groupby
 from operator import attrgetter
 import os
@@ -47,6 +48,39 @@ class EntityMixin(object):
     pass                        # FIXME
 
 
+def _default_json_cache_keyfunc(self, omit=()):
+    return (frozenset(omit),)
+
+
+def _cache_json(use_list=False, cache=None,
+                keyfunc=_default_json_cache_keyfunc):
+    def decorate(method):
+        @wraps(method)
+        def wrapper(self, *args, **kw):
+            key = keyfunc(self, *args, **kw)
+            if cache is not None:
+                cache_ = cache
+            else:
+                if not hasattr(self, '_json_cache'):
+                    self._json_cache = {}
+                cache_ = self._json_cache
+            if key in cache_:
+                return cache_[key]
+            # Be careful to create cache entry first incase of recursive
+            # jsonification
+            if use_list:
+                data = []
+                update_data = data.extend
+            else:
+                data = {}
+                update_data = data.update
+            cache_[key] = data
+            update_data(method(self, *args, **kw))
+            return data
+        return wrapper
+    return decorate
+
+
 class Entity(Base):
     entityType = Column(String(32), nullable=False)
     __mapper_args__ = {
@@ -89,20 +123,12 @@ class Entity(Base):
     def __repr__(self):
         return "<%s[%d]>" % (self.__class__.__name__, self.id)
 
+    @_cache_json()
     def __json__(self, omit=()):
-        omit = frozenset(omit)
-        if not hasattr(self, '_json_cache'):
-            self._json_cache = {}
-        args = (omit,)
-        if args in self._json_cache:
-            return self._json_cache[args]
-
         column_attrs = inspect(self).mapper.columns.keys()
         data = dict((attr, getattr(self, attr))
                     for attr in column_attrs
                     if not attr.startswith('_') and attr not in omit)
-
-        self._json_cache[args] = data
 
         def to_json(obj):
             if hasattr(obj, '__json__'):
@@ -116,6 +142,117 @@ class Entity(Base):
                 data[attr] = to_json(getattr(self, attr))
 
         return data
+
+
+class Identity(Entity):
+    __table__ = None
+
+
+class User(Identity):
+    __mapper_args__ = {'polymorphic_identity': 'GalleryUser'}
+
+    id = Column(ForeignKey(Entity.id), primary_key=True,
+                server_default=text("'0'"))
+    userName = Column(String(32), nullable=False, unique=True)
+    fullName = Column(String(128))
+    hashedPassword = Column(String(128))
+    email = Column(String(255))
+    language = Column(String(128))
+    locked = Column(Integer, server_default=text("'0'"))
+
+    _extra_json_attrs = Entity._extra_json_attrs + [
+        'plugin_parameters',
+        ]
+
+
+class Group(Identity):
+    __mapper_args__ = {'polymorphic_identity': 'GalleryGroup'}
+
+    id = Column(ForeignKey(Entity.id), primary_key=True,
+                server_default=text("'0'"))
+    groupType = Column(Integer, nullable=False, server_default=text("'0'"))
+    groupName = Column(String(128), unique=True)
+
+
+t_UserGroupMap = g_Table(
+    'UserGroupMap', metadata,
+    g_Column('userId', ForeignKey(User.id), nullable=False, index=True,
+             server_default=text("'0'")),
+    g_Column('groupId', ForeignKey(Group.id), nullable=False, index=True,
+             server_default=text("'0'")),
+    )
+
+Group.users = relationship(User, secondary=t_UserGroupMap, backref='groups')
+
+
+t_PermissionSetMap = g_Table(
+    'PermissionSetMap', metadata,
+    g_Column('module', String(128), nullable=False),
+    g_Column('permission', String(128), nullable=False, unique=True),
+    g_Column('description', String(255)),
+    g_Column('bits', Integer, nullable=False, server_default=text("'0'")),
+    g_Column('flags', Integer, nullable=False, server_default=text("'0'"))
+    )
+
+
+class AccessMap(Base):
+    accessListId = Column(Integer, primary_key=True, nullable=False,
+                          index=True, server_default=text("'0'"))
+    permission = Column(Integer, nullable=False, index=True,
+                        server_default=text("'0'"))
+    userOrGroupId = Column(ForeignKey(Entity.id),
+                           primary_key=True, nullable=False,
+                           index=True, server_default=text("'0'"))
+
+    _identity = relationship(Entity)
+
+    def __json__(self, omit=()):
+        identity = self._identity
+        if identity is None:
+            assert self.userOrGroupId == 0, \
+                "missing userOrGroupid %d" % self.userOrGroupId
+            return None
+        types = {
+            User: 'user',
+            Group: 'group',
+            AlbumItem: 'album_item',
+            PhotoItem: 'album_item',
+            LinkItem: 'album_item',
+            }
+        identity_key = types[type(identity)]
+        return {
+            'permission': self.permission,
+            identity_key: identity.__json__(omit=omit),
+            }
+
+
+class AccessSubscriberMap(Base):
+    itemId = Column(ForeignKey(Entity.id), primary_key=True,
+                    server_default=text("'0'"))
+    accessListId = Column(ForeignKey(AccessMap.accessListId),
+                          nullable=False, index=True,
+                          server_default=text("'0'"))
+
+
+class AccessList(list):
+    # This is all just a hack to sanely cache the return values
+    # from __json__, so that identical accessLists return the
+    # same list (not just an identical list).
+    def _keyfunc(self, omit=()):
+        ids = frozenset(entry.accessListId for entry in self)
+        return (ids, frozenset(omit))
+
+    _global_cache = {}
+
+    @_cache_json(use_list=True, cache=_global_cache, keyfunc=_keyfunc)
+    def __json__(self, omit=()):
+        return [entry.__json__(omit) for entry in self]
+
+
+Entity.accessList = relationship(AccessMap,
+                                 secondary=AccessSubscriberMap.__table__,
+                                 collection_class=AccessList)
+Entity._extra_json_attrs += ['accessList']
 
 
 class ChildEntity(Entity):
@@ -188,7 +325,7 @@ t_Item = g_Table(
              server_default=text("'0'")),
     g_Column('description', Text),
     g_Column('keywords', String(255), index=True),
-    g_Column('ownerId', Integer, nullable=False, index=True,
+    g_Column('ownerId', ForeignKey(User.id), nullable=False, index=True,
              server_default=text("'0'")),
     g_Column('summary', String(255), index=True),
     g_Column('title', String(128), index=True),
@@ -239,11 +376,16 @@ class Item(FileSystemEntity):
         primaryjoin='Item.id == remote(foreign(Derivative.parentId))',
         order_by='Derivative.derivativeOrder')
 
+    owner = relationship(
+        'User', foreign_keys='[Item.ownerId]',
+        )
+
     _extra_json_attrs = FileSystemEntity._extra_json_attrs + [
         'is_hidden',
         'subitems',
         'comments',
         'derivatives',
+        'owner',
         ]
 
 
@@ -379,40 +521,3 @@ def _get_derivative_prefs(item):
 # Only AlbumItems appear to have derivative prefs
 AlbumItem.derivative_prefs = property(_get_derivative_prefs)
 AlbumItem._extra_json_attrs += ['derivative_prefs']
-
-
-class User(Entity):
-    __mapper_args__ = {'polymorphic_identity': 'GalleryUser'}
-
-    id = Column(ForeignKey(Entity.id), primary_key=True,
-                server_default=text("'0'"))
-    userName = Column(String(32), nullable=False, unique=True)
-    fullName = Column(String(128))
-    hashedPassword = Column(String(128))
-    email = Column(String(255))
-    language = Column(String(128))
-    locked = Column(Integer, server_default=text("'0'"))
-
-    _extra_json_attrs = Entity._extra_json_attrs + [
-        'plugin_parameters',
-        ]
-
-
-class Group(Entity):
-    __mapper_args__ = {'polymorphic_identity': 'GalleryGroup'}
-
-    id = Column(ForeignKey(Entity.id), primary_key=True,
-                server_default=text("'0'"))
-    groupType = Column(Integer, nullable=False, server_default=text("'0'"))
-    groupName = Column(String(128), unique=True)
-
-
-t_UserGroupMap = g_Table(
-    'UserGroupMap', metadata,
-    g_Column('userId', ForeignKey(User.id), nullable=False, index=True,
-             server_default=text("'0'")),
-    g_Column('groupId', ForeignKey(Group.id), nullable=False, index=True,
-             server_default=text("'0'")),
-    )
-
-Group.users = relationship(User, secondary=t_UserGroupMap, backref='groups')
