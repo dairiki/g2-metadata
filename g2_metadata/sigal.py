@@ -39,7 +39,6 @@ def write_markdown(stream, md_text, metadata={}):
         stream.write(u"\n")
 
 
-
 def normalize_summary(item):
     """ Try to make summary superfluous.
 
@@ -101,10 +100,14 @@ class SigalMetadata(object):
     def metadata(self):
         item = self.item
         owner = item.owner
+        date = item.originationTimestamp
+        if date:
+            date = date.isoformat() + 'Z'
         data = [
             ('title', self.title),
             ('summary', self.summary),
             ('description', self.description),
+            ('date', item.originationTimestamp), # FIXME: format to local time?
             ('author', owner.fullName),
             ('author-email', owner.email),
              # FIXME: what if album is order by other keys?
