@@ -16,6 +16,8 @@ requires = [
     'MySQL-python',
     'phpserialize',
     'PyYAML',
+    'bbcode',
+    'html2text',
     'click',
     'six',
     ]

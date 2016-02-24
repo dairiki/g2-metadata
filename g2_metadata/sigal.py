@@ -16,6 +16,7 @@ from six import binary_type
 
 from collections import deque
 from . import meta
+from .markup import bbcode_to_markdown, strip_bbcode
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def normalize_summary(item):
         description = None
 
     if summary and not title:
-        title, summary = summary, None
+        title, summary = strip_bbcode(summary), None
     elif summary and not description:
         description, summary = summary, None
 
@@ -77,6 +78,13 @@ def normalize_summary(item):
             "  summary = {summary!r}\n"
             "  description = {description!r}".format(**locals()))
 
+    if description and not title:
+        if len(description.strip()) < 128:
+            title, description = strip_bbcode(description), None
+
+    if not title:
+        title = fnbase
+
     return title, summary, description
 
 
@@ -86,7 +94,14 @@ class SigalMetadata(object):
         self.albums_path = albums_path
         self.item = item
         self.target = item.path
-        self.title, self.summary, self.description = normalize_summary(item)
+        title, summary, description = normalize_summary(item)
+        self.title = title
+        if summary:
+            summary = strip_bbcode(summary)
+        self.summary = summary
+        if description:
+            description = bbcode_to_markdown(description)
+        self.description = description
 
     def write_metadata(self):
         metadata = self.metadata.copy()
@@ -110,10 +125,14 @@ class SigalMetadata(object):
             ('date', item.originationTimestamp), # FIXME: format to local time?
             ('author', owner.fullName),
             ('author-email', owner.email),
-             # FIXME: what if album is order by other keys?
-            ('order', item.orderWeight),
+            # FIXME: what if album is order by other keys?
+            # FIXME: what if no orderWeight?
+            ('order', item.orderWeight or 0),
+            ('gallery2-id', item.id),
+            # FIXME: comments?
+            # FIXME: thumbnail!
             ]
-        data = OrderedDict((k, unicode(v)) for k, v in data if v)
+        data = OrderedDict((k, unicode(v)) for k, v in data if v is not None)
         if not data:
             data = {'title': item.pathComponent}
         return data
