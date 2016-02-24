@@ -2,6 +2,8 @@
 from __future__ import absolute_import
 
 import logging
+import io
+import os
 import sys
 try:
     import cPickle as pickle
@@ -36,6 +38,29 @@ class DbUrl(click.ParamType):
 DBURL = DbUrl()
 
 
+class Metadata(click.Path):
+    name = 'metadata'
+
+    def __init__(self):
+        super(Metadata, self).__init__(exists=True, dir_okay=False)
+
+    def convert(self, value, param, ctx):
+        path = super(Metadata, self).convert(value, param, ctx)
+        ext = os.path.splitext(path)[1]
+        with io.open(path, 'rb') as fp:
+            if ext.lower() == '.pck':
+                return pickle.load(fp)
+            else:
+                return loader.load(fp)
+
+    @staticmethod
+    def from_stdin():
+        return loader.load(sys.stdin)  # read YAML from STDIN
+
+
+METADATA = Metadata()
+
+
 @click.group()
 def main():
     # FIXME: control logging level
@@ -57,22 +82,25 @@ def dump(dbsession, outfp):
 @click.option('outfp', '--output', '-o', required=True,
               type=click.File('wb', atomic=True),
               help="Output file (.pck)")
-@click.argument('infp', type=click.File('r'), default=sys.stdin,
-                metavar='[<input.yml>]')
-def yaml_to_pck(infp, outfp):
+@click.argument('metadata', type=METADATA, required=False,
+                metavar='[<metadata.yml>]')
+def yaml_to_pck(metadata, outfp):
     """ Pickle YAML metadata (for faster loading).
     """
-    data = loader.load(infp)
-    pickle.dump(data, outfp, pickle.HIGHEST_PROTOCOL)
+    if metadata is None:
+        metadata = METADATA.from_stdin()
+    pickle.dump(metadata, outfp, pickle.HIGHEST_PROTOCOL)
 
 
 @main.command(name='to-sigal')
 @click.option('--albums', default='albums',
               type=click.Path(exists=True, file_okay=False, writable=True),
               help="Path to albums directory", show_default=True)
-@click.argument('infp', type=click.File('rb'), metavar='<metadata.pck>')
-def to_sigal(infp, albums):
+@click.argument('metadata', type=METADATA, required=False,
+                metavar='[<metadata.pck>|<metadata.yml>]')
+def to_sigal(metadata, albums):
     """ Write sigal metadata.
     """
-    data = pickle.load(infp)
-    sigal.write_metadata(data, albums)
+    if metadata is None:
+        metadata = METADATA.from_stdin()
+    sigal.write_metadata(metadata, albums)
