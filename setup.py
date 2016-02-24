@@ -17,6 +17,7 @@ requires = [
     'phpserialize',
     'PyYAML',
     'click',
+    'six',
     ]
 
 testing_extras = [

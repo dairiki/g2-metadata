@@ -10,7 +10,7 @@ tree as those in ``g2_metadata.models``.
 # in .models.entity
 class Entity(object):
     def __repr__(self):
-        return "<%s[%d]>" % (self.__class__.__name__, self.id)
+        return "<%s id=%d>" % (self.__class__.__name__, self.id)
 
 class ChildEntity(Entity): pass
 class FileSystemEntity(ChildEntity): pass

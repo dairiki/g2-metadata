@@ -139,8 +139,8 @@ def get_gallery_metadata(session):
     data['plugin_parameters'] = models.get_global_plugin_parameters(session)
 
     # Find the top-level album for the gallery
-    data['gallery'] = session.query(models.AlbumItem).filter_by(parentId=0)\
-                                                     .one()
+    data['album'] = session.query(models.AlbumItem).filter_by(parentId=0)\
+                                                   .one()
     return data
 
 
