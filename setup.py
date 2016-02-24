@@ -18,6 +18,8 @@ requires = [
     'PyYAML',
     'bbcode',
     'html2text',
+    'jinja2',
+    'piexif',
     'click',
     'six',
     ]
