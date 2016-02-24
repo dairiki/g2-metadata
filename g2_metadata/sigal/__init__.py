@@ -116,7 +116,6 @@ class SigalMetadata(object):
             # FIXME: comments?
             # FIXME: keywords
             ('keywords', item.keywords),
-            # FIXME: hidden flag
             ('hidden', item.is_hidden and 'yes')
             # FIXME: original title, summary, description?
             # FIXME: rotation information?
