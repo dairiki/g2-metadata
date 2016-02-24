@@ -27,7 +27,11 @@ from .derivative import (
     t_DerivativePrefsMap,
     )
 from .plugin import PluginParametersMixin
-from .types import Timestamp
+from .types import (
+    MangledString,
+    MangledText,
+    Timestamp,
+    )
 
 
 t_Item = g_Table(
@@ -37,12 +41,12 @@ t_Item = g_Table(
              server_default=text("'0'")),
     g_Column('canContainChildren', Integer, nullable=False,
              server_default=text("'0'")),
-    g_Column('description', Text),
-    g_Column('keywords', String(255), index=True),
+    g_Column('description', MangledText),
+    g_Column('keywords', MangledString(255), index=True),
     g_Column('ownerId', ForeignKey(User.id), nullable=False, index=True,
              server_default=text("'0'")),
-    g_Column('summary', String(255), index=True),
-    g_Column('title', String(128), index=True),
+    g_Column('summary', MangledString(255), index=True),
+    g_Column('title', MangledString(128), index=True),
     g_Column('viewedSinceTimestamp', Timestamp, nullable=False,
              server_default=text("'0'")),
     g_Column('originationTimestamp', Timestamp, nullable=False,

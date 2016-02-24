@@ -17,7 +17,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from .base import Base
-from .types import Timestamp
+from .types import (
+    MangledString,
+    MangledText,
+    Timestamp,
+    )
 
 
 class EntityMixin(object):
@@ -85,11 +89,11 @@ class Comment(ChildEntity):
                 server_default=text("'0'"))
     commenterId = Column(Integer, nullable=False, server_default=text("'0'"))
     host = Column(String(128), nullable=False)
-    subject = Column(String(128))
-    comment = Column(Text)
+    subject = Column(MangledString(128))
+    comment = Column(MangledText)
     date = Column(Timestamp, nullable=False, index=True,
                   server_default=text("'0'"))
-    author = Column(String(128))
+    author = Column(MangledString(128))
     publishStatus = Column(Integer, nullable=False, server_default=text("'0'"))
 
 
