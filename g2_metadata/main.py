@@ -14,6 +14,7 @@ import click
 import sqlalchemy as sa
 
 from . import dumper
+from . import exif
 from . import loader
 from . import markup
 from . import sigal
@@ -119,3 +120,12 @@ def bbcode_test(metadata, outfp):
     if metadata is None:
         metadata = METADATA.from_stdin()
     markup.make_bbcode_test_page(metadata, outfp)
+
+
+@main.command(name='fix-exif')
+@click.argument('filename', nargs=-1, required=True,
+                type=click.Path(exists=True, dir_okay=False,
+                                writable=True, readable=True))
+def fix_exif(filename):
+    for fn in filename:
+        exif.fix_exif(fn)
