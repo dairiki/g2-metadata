@@ -114,10 +114,11 @@ class SigalMetadata(object):
             ('order', item.orderWeight or 0),
             ('gallery2-id', item.id),
             # FIXME: comments?
-            # FIXME: thumbnail!
             # FIXME: keywords
-            # FIXME: original title, summary, description?
+            ('keywords', item.keywords),
             # FIXME: hidden flag
+            ('hidden', item.is_hidden and 'yes')
+            # FIXME: original title, summary, description?
             # FIXME: rotation information?
             ]
         data = OrderedDict((k, unicode(v)) for k, v in data if v is not None)
