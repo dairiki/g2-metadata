@@ -12,9 +12,9 @@ import logging
 import os
 import re
 
-from . import meta
-from .markup import bbcode_to_markdown, strip_bbcode
-from .util import text_, walk_items
+from .. import meta
+from ..markup import bbcode_to_markdown, strip_bbcode
+from ..util import text_, walk_items
 
 log = logging.getLogger(__name__)
 
