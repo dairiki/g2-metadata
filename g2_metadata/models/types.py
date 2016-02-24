@@ -23,6 +23,6 @@ class Timestamp(sa.TypeDecorator):
         return value
 
     def process_result_value(self, value, dialect):
-        if value is None:
+        if value is None or value == -1:
             return None
         return datetime.utcfromtimestamp(value)
