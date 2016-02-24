@@ -18,6 +18,11 @@ import re
 
 import bbcode
 from html2text import HTML2Text
+import jinja2
+from markdown import markdown
+from pkg_resources import resource_string
+
+from .util import text_, walk_items
 
 
 bbcode_parser = bbcode.Parser(escape_html=False)
@@ -48,18 +53,42 @@ bbcode_parser.add_formatter('img', _render_img,
 
 
 def bbcode_to_markdown(text):
-    # FIXME: text = text_(text)
-    html = bbcode_parser.format(text)
+    html = bbcode_parser.format(text_(text))
     h2t = HTML2Text()
-    # FIXME: options
+    h2t.unicode_snob = True
     return h2t.handle(html)
 
 
 def strip_bbcode(text, strip_newlines=True):
-    # FIXME: text = text_(text)
-    # passing strip_newlines to strip, really strips them (not putting any spaces
-    # in to replace them)
-    stripped = bbcode_parser.strip(text, strip_newlines=False)
+    # NB: We have to do the newline stripping ourself. Passing
+    # strip_newlines=True to bbcode.Parser.strip really strips them
+    # completely — it doesn’t put any spaces in to replace them.
+    stripped = bbcode_parser.strip(text_(text), strip_newlines=False)
     if strip_newlines:
         stripped = re.sub(r'\s*\n\s*', ' ', stripped)
     return stripped
+
+
+def make_bbcode_test_page(metadata, outfp):
+    samples = []
+    for item in walk_items(metadata['album']):
+        for attr in 'title', 'summary', 'description':
+            s = text_(getattr(item, attr))
+            if s and re.search(r'\[\w+.*\]|\n', s.strip()):
+                # Looks like bbcode
+                md = bbcode_to_markdown(s)
+                samples.append({
+                    'path': item.path,
+                    'field': attr,
+                    'bbcode': s,
+                    'stripped': strip_bbcode(s),
+                    'markdown': md,
+                    'html': markdown(md),
+                    })
+
+    tmpl = jinja2.Template(
+        resource_string(__name__, 'bbcode_test_page.jinja2'),
+        autoescape=True,
+        undefined=jinja2.StrictUndefined)
+
+    outfp.write(tmpl.render(samples=samples))

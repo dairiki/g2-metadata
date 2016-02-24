@@ -15,6 +15,7 @@ import sqlalchemy as sa
 
 from . import dumper
 from . import loader
+from . import markup
 from . import sigal
 
 engine = sa.create_engine('mysql://gallery@furry/gallery2?charset=utf8',
@@ -104,3 +105,17 @@ def to_sigal(metadata, albums):
     if metadata is None:
         metadata = METADATA.from_stdin()
     sigal.write_metadata(metadata, albums)
+
+
+@main.command(name='bbcode-test')
+@click.option('outfp', '--output', '-o', default=sys.stdout,
+              type=click.File('w', encoding='utf-8', atomic=True),
+              help="Output file (.html) [default: stdout]")
+@click.argument('metadata', type=METADATA, required=False,
+                metavar='[<metadata.pck>|<metadata.yml>]')
+def bbcode_test(metadata, outfp):
+    """ Write HTML file with bbcode conversion samples (for testing)
+    """
+    if metadata is None:
+        metadata = METADATA.from_stdin()
+    markup.make_bbcode_test_page(metadata, outfp)

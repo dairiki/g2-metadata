@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>BBCode to Markdown Tests</title>
+  </head>
+  <body>
+    {% for sample in samples %}
+    <dl>
+      <dt>BBCode from {{ sample.path }} ({{ sample.field }})</dt>
+      <dd><pre>{{ sample.bbcode }}</pre></dd>
+      <dt>Markdown</dt>
+      <dd><pre>{{ sample.markdown }}</pre></dd>
+      <dt>HTML</dt>
+      <dd><pre>{{ sample.html }}</pre></dd>
+      <dt>As displayed</dt>
+      <dd>{{ sample.html|safe }}</dd>
+      <dt>Stripped</dt>
+      <dd>{{ sample.stripped|safe }}</dd>
+    </dl>
+    {% if not loop.last %}
+    <hr>
+    {% endif %}
+    {% endfor %}
+  </body>
+</html>

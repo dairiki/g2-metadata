@@ -12,21 +12,11 @@ import logging
 import os
 import re
 
-from six import binary_type
-
-from collections import deque
 from . import meta
 from .markup import bbcode_to_markdown, strip_bbcode
+from .util import text_, walk_items
 
 log = logging.getLogger(__name__)
-
-
-def text_(s, encoding='latin-1', errors='strict'):
-    """ If ``s`` is an instance of ``binary_type``, return
-    ``s.decode(encoding, errors)``, otherwise return ``s``"""
-    if isinstance(s, binary_type):
-        return s.decode(encoding, errors)
-    return s
 
 
 def write_markdown(stream, md_text, metadata={}):
@@ -78,12 +68,13 @@ def normalize_summary(item):
             "  summary = {summary!r}\n"
             "  description = {description!r}".format(**locals()))
 
-    if description and not title:
-        if len(description.strip()) < 128:
-            title, description = strip_bbcode(description), None
-
     if not title:
         title = fnbase
+
+    if summary:
+        summary = strip_bbcode(summary)
+    if description:
+        description = bbcode_to_markdown(description)
 
     return title, summary, description
 
@@ -94,14 +85,7 @@ class SigalMetadata(object):
         self.albums_path = albums_path
         self.item = item
         self.target = item.path
-        title, summary, description = normalize_summary(item)
-        self.title = title
-        if summary:
-            summary = strip_bbcode(summary)
-        self.summary = summary
-        if description:
-            description = bbcode_to_markdown(description)
-        self.description = description
+        self.title, self.summary, self.description = normalize_summary(item)
 
     def write_metadata(self):
         metadata = self.metadata.copy()
@@ -122,7 +106,7 @@ class SigalMetadata(object):
             ('title', self.title),
             ('summary', self.summary),
             ('description', self.description),
-            ('date', item.originationTimestamp), # FIXME: format to local time?
+            ('date', item.originationTimestamp),  # FIXME: format to local time?
             ('author', owner.fullName),
             ('author-email', owner.email),
             # FIXME: what if album is order by other keys?
@@ -131,6 +115,10 @@ class SigalMetadata(object):
             ('gallery2-id', item.id),
             # FIXME: comments?
             # FIXME: thumbnail!
+            # FIXME: keywords
+            # FIXME: original title, summary, description?
+            # FIXME: hidden flag
+            # FIXME: rotation information?
             ]
         data = OrderedDict((k, unicode(v)) for k, v in data if v is not None)
         if not data:
@@ -150,22 +138,35 @@ class SigalAlbumHelper(SigalMetadata):
     def md_path(self):
         return os.path.join(self.target, 'index.md')
 
+    @property
+    def metadata(self):
+        data = super(SigalAlbumHelper, self).metadata
+        item = self.item
+        hilight = item.hilight
+        if hilight is not None:
+            hilight_path = hilight.pathComponent
+            parent = hilight.parent
+            while parent != item:
+                assert parent is not None
+                hilight_path = os.path.join(parent.pathComponent, hilight_path)
+                parent = parent.parent
+            data['thumbnail'] = hilight_path
+        else:
+            # FIXME: Check that sigal picks first subitem for thumbnail.
+            # If not, we'll have to pick it ourself here.
+            pass
 
-def walk_items(item):
-    items = deque([item])
-    while items:
-        item = items.popleft()
-        items.extend(item.subitems)
-        yield item
+        return data
 
 
 def write_metadata(data, albums_path):
-    album = data.get('album', data.get('gallery'))
+    album = data['album']
     for item in walk_items(album):
         if isinstance(item, meta.AlbumItem):
             helper = SigalAlbumHelper(albums_path, item)
         elif isinstance(item, (meta.PhotoItem, meta.MovieItem)):
             helper = SigalImageHelper(albums_path, item)
+            # FIXME: ensure symlink exists, if needed
         else:
             log.warning("Do not know how to handle %r.  Ignoring..." % item)
             continue
