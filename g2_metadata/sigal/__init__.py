@@ -6,80 +6,29 @@
 """
 from __future__ import absolute_import
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
 import io
 import logging
 import os
-import re
 
 from .. import meta
-from ..markup import bbcode_to_markdown, strip_bbcode
+from ..markup import bbcode_to_markdown, strip_bbcode, strip_nl
 from ..util import text_, walk_items
 
 log = logging.getLogger(__name__)
 
 
 def write_markdown(stream, md_text, metadata={}):
-    for key in metadata:
+    for key, value in metadata.items():
         # ensure it is single-line
-        value = re.sub(r'\s*\n\s*', ' ', metadata[key])
-        stream.write(u"{0:<8s} {1}\n".format("%s:" % key.title(), value))
+        if value is not None:
+            stream.write(u"{key:<8s} {value}\n".format(
+                key=key.title() + ':',
+                value=strip_nl(u"%s" % value).strip()))
     stream.write(u"\n")
     if md_text:
         stream.write(text_(md_text))
         stream.write(u"\n")
-
-
-def normalize_summary(item):
-    """ Try to make summary superfluous.
-
-    Gallery items have a title, summary and description.  Sigal, like most
-    other galleries has only title and description.
-
-    Here we try to reduce the information in (title, summary, description)
-    down to just (title, description).
-
-    """
-    title = item.title
-    summary = item.summary
-    description = item.description
-    fn = item.pathComponent or ''
-    fnbase = os.path.splitext(fn)[0]
-
-    if title in (fn, fnbase):
-        title = None
-    if summary in (fn, fnbase, title, description):
-        summary = None
-    if description in (fn, fnbase, title):
-        description = None
-
-    # NB: In gallery2, the summary can contain bbcode markup, while the
-    # title is always just plain text.  So be careful to strip markup
-    # if moving the summary to the title.
-    if summary and not title:
-        title, summary = strip_bbcode(summary), None
-    elif summary and not description:
-        description, summary = summary, None
-
-    if summary:
-        log.warning(
-            "Can not eliminate non-trivial summary.\n"
-            "  title   = {title!r}\n"
-            "  summary = {summary!r}\n"
-            "  description = {description!r}".format(**locals()))
-
-    if not title:
-        title = fnbase
-
-    # For sigal, the title and summary should be plain text (though
-    # the summary is currently ignored.)  The description is parsed as
-    # markdown.
-    if summary:
-        summary = strip_bbcode(summary)
-    if description:
-        description = bbcode_to_markdown(description)
-
-    return title, summary, description
 
 
 class SigalMetadata(object):
@@ -87,30 +36,48 @@ class SigalMetadata(object):
         self.albums_path = albums_path
         self.item = item
         self.target = item.path
-        self.title, self.summary, self.description = normalize_summary(item)
 
     @property
     def target_path(self):
         return os.path.join(self.albums_path, self.target)
 
     def write_metadata(self):
-        metadata = self.metadata.copy()
-        description = metadata.pop('description', None)
         md_path = os.path.join(self.albums_path, self.md_path)
         with io.open(md_path, 'w', encoding='utf-8') as fp:
-            write_markdown(fp, description, metadata)
+            write_markdown(fp, self.description, self.metadata)
+
+    @property
+    def description(self):
+        item = self.item
+        if item.description:
+            return bbcode_to_markdown(item.description)
+        else:
+            return '\n'
 
     @property
     def metadata(self):
         item = self.item
         owner = item.owner
-        date = item.originationTimestamp
-        if date:
-            date = date.isoformat() + 'Z'
+        #date = item.originationTimestamp
+        #if date:
+        #    date = date.isoformat() + 'Z'
+
+        # Notes
+        # =====
+
+        # In gallery2, ``title`` and ``summary`` are listed in contain
+        # album's listing, while ``title`` and ``description`` are
+        # listed on the actual item's page.  ``Title`` is interpreted
+        # as plain text, while ``summary`` and ``description`` can
+        # contain bbcode markup.
+
+        # ``Keywords`` are not displayed anywhere, but are available
+        # as search terms.
+
+        summary = strip_bbcode(item.summary).strip() if item.summary else None
         data = [
-            ('title', self.title),
-            ('summary', self.summary),
-            ('description', self.description),
+            ('title', item.title),
+            ('summary', summary),
             ('date', item.originationTimestamp),  # FIXME: format to local time?
             ('author', owner.fullName),
             ('author-email', owner.email),
@@ -124,10 +91,7 @@ class SigalMetadata(object):
             # FIXME: original title, summary, description?
             # FIXME: rotation information?
             ]
-        data = OrderedDict((k, unicode(v)) for k, v in data if v is not None)
-        if not data:
-            data = {'title': item.pathComponent}
-        return data
+        return OrderedDict((k, v) for k, v in data if v is not None)
 
     def check_target(self):
         target_path = self.target_path
@@ -173,24 +137,33 @@ class SigalAlbumHelper(SigalMetadata):
     def md_path(self):
         return os.path.join(self.target, 'index.md')
 
+    def _find_hilight(self):
+        """ Find hilight for item.
+
+        If item does not have an explicit hilight, check subitems, in
+        order, for one that has an explicit or implicit hilight.
+
+        """
+        traverse = deque([self.item])
+        while traverse:
+            item = traverse.popleft()
+            if item.hilight:
+                return item.hilight
+            traverse.extendleft(reversed(item.subitems))
+
     @property
     def metadata(self):
         data = super(SigalAlbumHelper, self).metadata
-        item = self.item
-        hilight = item.hilight
+        hilight = self._find_hilight()
         if hilight is not None:
-            # XXX: What if the hilight item is hidden (or in a hidden album)?
+            # XXX: What if the hilight item is hidden (or in a hidden
+            # album)?
             hilight_path = os.path.join(self.albums_path, hilight.path)
-            hilight_relpath = os.path.relpath(hilight_path, self.target_path)
+            thumbnail = os.path.relpath(hilight_path, self.target_path)
             if not os.path.exists(hilight_path):
                 log.warning("%s: thumbnail %s does not exist",
-                            self.target, hilight_relpath)
-            data['thumbnail'] = hilight_relpath
-        else:
-            # FIXME: Check that sigal picks first subitem for thumbnail.
-            # If not, we'll have to pick it ourself here.
-            pass
-
+                            self.target, thumbnail)
+            data['thumbnail'] = thumbnail
         return data
 
     def check_target(self):

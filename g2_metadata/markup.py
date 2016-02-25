@@ -59,13 +59,17 @@ def bbcode_to_markdown(text):
     return h2t.handle(html)
 
 
+def strip_nl(text):
+    return re.sub(r'\s*?[\n\r]\s*', ' ', text)
+
+
 def strip_bbcode(text, strip_newlines=True):
     # NB: We have to do the newline stripping ourself. Passing
     # strip_newlines=True to bbcode.Parser.strip really strips them
     # completely — it doesn’t put any spaces in to replace them.
     stripped = bbcode_parser.strip(text_(text), strip_newlines=False)
     if strip_newlines:
-        stripped = re.sub(r'\s*\n\s*', ' ', stripped)
+        stripped = strip_nl(stripped)
     return stripped
 
 
