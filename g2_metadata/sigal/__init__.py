@@ -179,13 +179,13 @@ class SigalAlbumHelper(SigalMetadata):
         item = self.item
         hilight = item.hilight
         if hilight is not None:
-            hilight_path = hilight.pathComponent
-            parent = hilight.parent
-            while parent != item:
-                assert parent is not None
-                hilight_path = os.path.join(parent.pathComponent, hilight_path)
-                parent = parent.parent
-            data['thumbnail'] = hilight_path
+            # XXX: What if the hilight item is hidden (or in a hidden album)?
+            hilight_path = os.path.join(self.albums_path, hilight.path)
+            hilight_relpath = os.path.relpath(hilight_path, self.target_path)
+            if not os.path.exists(hilight_path):
+                log.warning("%s: thumbnail %s does not exist",
+                            self.target, hilight_relpath)
+            data['thumbnail'] = hilight_relpath
         else:
             # FIXME: Check that sigal picks first subitem for thumbnail.
             # If not, we'll have to pick it ourself here.
