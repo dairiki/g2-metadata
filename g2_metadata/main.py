@@ -127,5 +127,27 @@ def bbcode_test(metadata, outfp):
                 type=click.Path(exists=True, dir_okay=False,
                                 writable=True, readable=True))
 def fix_exif(filename):
+    """ Check image files for botched EXIF ``Orientation`` tag
+
+    When instructed to, Gallery2 rotates the original images [1]_, it fails,
+    however, to update the EXIF ``Orientation`` tag.  This means that
+    other image handling programs may try to rotate the image again, which
+    is not good.
+
+    This command heuristically checks image files for this condition,
+    and fixes the ``Orientation`` tag, when it deems appropriate.
+
+    Algorithm: We assume that all images from cameras come natively
+    in a landscape (horizontal) aspect ratio, so if an image has a
+    portrait (vertical) aspect ratio, we assume it's been rotated.
+    If such an image has an ``Orientation`` tag which indicates that
+    the x and y axes should be swapped, we assume that is obsolete,
+    and reset the ``Orientation`` tag to 1.
+
+    .. [1] At least, I think it is gallery2 that is doing the rotation;
+       in any case, there are a lot of images in my gallery2 which have
+       been rotated but have a botched ``Orientation`` tag.
+
+    """
     for fn in filename:
         exif.fix_exif(fn)
