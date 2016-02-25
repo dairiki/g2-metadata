@@ -66,7 +66,7 @@ METADATA = Metadata()
 @click.group()
 def main():
     # FIXME: control logging level
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
 
 @main.command()

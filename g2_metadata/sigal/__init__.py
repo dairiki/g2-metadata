@@ -97,7 +97,6 @@ class SigalMetadata(object):
         metadata = self.metadata.copy()
         description = metadata.pop('description', None)
         md_path = os.path.join(self.albums_path, self.md_path)
-        log.info("Writing metadata to {0.md_path}".format(self))
         with io.open(md_path, 'w', encoding='utf-8') as fp:
             write_markdown(fp, description, metadata)
 
