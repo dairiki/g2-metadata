@@ -46,9 +46,6 @@ def normalize_summary(item):
     fn = item.pathComponent or ''
     fnbase = os.path.splitext(fn)[0]
 
-    # FIXME: bbcode can only be in description
-    # FIXME: deal with bbcode in summary (and title?)
-
     if title in (fn, fnbase):
         title = None
     if summary in (fn, fnbase, title, description):
@@ -56,6 +53,9 @@ def normalize_summary(item):
     if description in (fn, fnbase, title):
         description = None
 
+    # NB: In gallery2, the summary can contain bbcode markup, while the
+    # title is always just plain text.  So be careful to strip markup
+    # if moving the summary to the title.
     if summary and not title:
         title, summary = strip_bbcode(summary), None
     elif summary and not description:
@@ -71,6 +71,9 @@ def normalize_summary(item):
     if not title:
         title = fnbase
 
+    # For sigal, the title and summary should be plain text (though
+    # the summary is currently ignored.)  The description is parsed as
+    # markdown.
     if summary:
         summary = strip_bbcode(summary)
     if description:
@@ -80,12 +83,15 @@ def normalize_summary(item):
 
 
 class SigalMetadata(object):
-    # FIXME: convert bbcode in description to markdown
     def __init__(self, albums_path, item):
         self.albums_path = albums_path
         self.item = item
         self.target = item.path
         self.title, self.summary, self.description = normalize_summary(item)
+
+    @property
+    def target_path(self):
+        return os.path.join(self.albums_path, self.target)
 
     def write_metadata(self):
         metadata = self.metadata.copy()
@@ -109,13 +115,12 @@ class SigalMetadata(object):
             ('date', item.originationTimestamp),  # FIXME: format to local time?
             ('author', owner.fullName),
             ('author-email', owner.email),
-            # FIXME: what if album is order by other keys?
-            # FIXME: what if no orderWeight?
+            # FIXME: what if album is ordered by other keys?
             ('order', item.orderWeight or 0),
             ('gallery2-id', item.id),
             # FIXME: comments?
-            # FIXME: keywords
             ('keywords', item.keywords),
+            # FIXME: hidden flag
             ('hidden', item.is_hidden and 'yes')
             # FIXME: original title, summary, description?
             # FIXME: rotation information?
@@ -125,12 +130,43 @@ class SigalMetadata(object):
             data = {'title': item.pathComponent}
         return data
 
+    def check_target(self):
+        target_path = self.target_path
+        if not os.path.exists(target_path):
+            log.error("%s: target does not exist", self.target)
+        elif not os.access(target_path, os.R_OK):
+            log.warning("%s: is not readable", self.target)
+
 
 class SigalImageHelper(SigalMetadata):
     @property
     def md_path(self):
         base, ext = os.path.splitext(self.target)
         return base + '.md'
+
+    def _check_link(self):
+        target_path = self.target_path
+        link = self.item.linked_item.path
+        link_path = os.path.join(self.albums_path, link)
+
+        if not os.path.exists(target_path):
+            # Create symlink
+            if os.path.isfile(link_path):
+                link_relpath = os.path.relpath(link_path,
+                                               os.path.dirname(target_path))
+                log.info("%s: creating symlink link to %s",
+                         self.target, link_relpath)
+                os.symlink(link_relpath, target_path)
+            else:
+                log.error("%s: link target %s is not a regular file",
+                          self.target, link)
+        elif not os.path.islink(target_path):
+            log.warning("%s: not a symlink", self.target)
+
+    def check_target(self):
+        if self.item.linked_item is not None:
+            self._check_link()
+        super(SigalImageHelper, self).check_target()
 
 
 class SigalAlbumHelper(SigalMetadata):
@@ -158,6 +194,12 @@ class SigalAlbumHelper(SigalMetadata):
 
         return data
 
+    def check_target(self):
+        if not os.path.isdir(self.target_path):
+            log.error("%s: not a directory", self.target)
+        else:
+            super(SigalAlbumHelper, self).check_target()
+
 
 def write_metadata(data, albums_path):
     album = data['album']
@@ -166,9 +208,9 @@ def write_metadata(data, albums_path):
             helper = SigalAlbumHelper(albums_path, item)
         elif isinstance(item, (meta.PhotoItem, meta.MovieItem)):
             helper = SigalImageHelper(albums_path, item)
-            # FIXME: ensure symlink exists, if needed
         else:
             log.warning("Do not know how to handle %r.  Ignoring..." % item)
             continue
         log.debug("Processing {0.path}".format(item))
+        helper.check_target()
         helper.write_metadata()
