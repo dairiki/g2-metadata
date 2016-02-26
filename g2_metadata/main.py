@@ -64,9 +64,14 @@ METADATA = Metadata()
 
 
 @click.group()
-def main():
-    # FIXME: control logging level
-    logging.basicConfig(level=logging.INFO)
+@click.option('-v', '--verbose', count=True,
+              help="Increase verbosity.  Can be used multiple times.")
+def main(verbose):
+    if verbose:
+        log_level = logging.DEBUG if verbose > 1 else logging.INFO
+    else:
+        log_level = logging.WARN
+    logging.basicConfig(level=log_level)
 
 
 @main.command()
