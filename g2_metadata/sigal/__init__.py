@@ -11,6 +11,8 @@ import io
 import logging
 import os
 
+from six import text_type
+
 from .. import meta
 from ..markup import bbcode_to_markdown, strip_bbcode, strip_nl
 from ..util import text_, walk_items
@@ -22,17 +24,23 @@ def write_markdown(stream, md_text, metadata={}):
     for key, value in metadata.items():
         # ensure it is single-line
         if value is not None:
-            stream.write(u"{key:<8s} {value}\n".format(
+            stream.write(u"{key:<16s} {value}\n".format(
                 key=key.title() + ':',
-                value=strip_nl(u"%s" % value).strip()))
+                value=strip_nl(text_type(value)).strip()))
     stream.write(u"\n")
     if md_text:
         stream.write(text_(md_text))
         stream.write(u"\n")
 
 
+def zulu(dt):
+    if dt:
+        return dt.isoformat('T') + 'Z'
+
+
 class SigalMetadata(object):
-    def __init__(self, albums_path, item):
+    def __init__(self, g2data, albums_path, item):
+        self.g2data = g2data
         self.albums_path = albums_path
         self.item = item
         self.target = item.path
@@ -56,12 +64,6 @@ class SigalMetadata(object):
 
     @property
     def metadata(self):
-        item = self.item
-        owner = item.owner
-        #date = item.originationTimestamp
-        #if date:
-        #    date = date.isoformat() + 'Z'
-
         # Notes
         # =====
 
@@ -73,23 +75,26 @@ class SigalMetadata(object):
 
         # ``Keywords`` are not displayed anywhere, but are available
         # as search terms.
+        item = self.item
+        owner = item.owner
 
         summary = strip_bbcode(item.summary).strip() if item.summary else None
         data = [
             ('title', item.title),
             ('summary', summary),
-            ('date', item.originationTimestamp),  # FIXME: format to local time?
+            # FIXME: use this in the templates (or munge EXIF data?)
+            ('date', zulu(item.originationTimestamp)),
+            ('created', zulu(item.creationTimestamp)),
+            ('updated', zulu(item.modificationTimestamp)),
             ('author', owner.fullName),
             ('author-email', owner.email),
-            # FIXME: what if album is ordered by other keys?
-            ('order', item.orderWeight or 0),
+            ('order-weight', item.orderWeight or 0),
             ('gallery2-id', item.id),
             # FIXME: comments?
             ('keywords', item.keywords),
-            # FIXME: hidden flag
+            ('view-count', item.viewCount),
             ('hidden', item.is_hidden and 'yes')
-            # FIXME: original title, summary, description?
-            # FIXME: rotation information?
+            # XXX: rotation information?
             ]
         return OrderedDict((k, v) for k, v in data if v is not None)
 
@@ -153,6 +158,7 @@ class SigalAlbumHelper(SigalMetadata):
 
     @property
     def metadata(self):
+        item = self.item
         data = super(SigalAlbumHelper, self).metadata
         hilight = self._find_hilight()
         if hilight is not None:
@@ -164,6 +170,22 @@ class SigalAlbumHelper(SigalMetadata):
                 log.warning("%s: thumbnail %s does not exist",
                             self.target, thumbnail)
             data['thumbnail'] = thumbnail
+
+        core_params = self.g2data['plugin_parameters']['module']['core']
+        if item.orderBy:
+            order_by = item.orderBy
+            order_direction = item.orderDirection
+        else:
+            order_by = core_params.get('default.orderBy')
+            order_direction = core_params.get('default.orderDirection')
+        if order_by:
+            data['order-by'] = order_by
+            # Normalize order direction.  (It is either exactly 'desc' or
+            # g2 interprets is as 'asc'.)
+            data['order-direction'] = '|'.join(
+                'desc' if od.strip() == 'desc' else 'asc'
+                for od in (order_direction or '').split('|'))
+
         return data
 
     def check_target(self):
@@ -173,13 +195,13 @@ class SigalAlbumHelper(SigalMetadata):
             super(SigalAlbumHelper, self).check_target()
 
 
-def write_metadata(data, albums_path):
-    album = data['album']
+def write_metadata(g2data, albums_path):
+    album = g2data['album']
     for item in walk_items(album):
         if isinstance(item, meta.AlbumItem):
-            helper = SigalAlbumHelper(albums_path, item)
+            helper = SigalAlbumHelper(g2data, albums_path, item)
         elif isinstance(item, (meta.PhotoItem, meta.MovieItem)):
-            helper = SigalImageHelper(albums_path, item)
+            helper = SigalImageHelper(g2data, albums_path, item)
         else:
             log.warning("Do not know how to handle %r.  Ignoring..." % item)
             continue
