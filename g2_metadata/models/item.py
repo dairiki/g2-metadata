@@ -98,10 +98,11 @@ class Item(FileSystemEntity):
         'User', foreign_keys='[Item.ownerId]',
         )
 
-    linked_item = relationship('Item',
-                               primaryjoin='foreign(Entity.linkId) == remote(Item.id)',
-                               lazy='subquery',
-                               backref='linked_from_item')
+    linked_item = relationship(
+        'Item',
+        primaryjoin='foreign(Entity.linkId) == remote(Item.id)',
+        lazy='subquery',
+        backref='linked_from_item')
 
 
 class AlbumItem(Item, PluginParametersMixin):

@@ -11,7 +11,6 @@ from collections import (
     )
 from datetime import datetime
 import re
-import sys
 
 import sqlalchemy as sa
 import yaml
@@ -109,7 +108,7 @@ def get_gallery_metadata(session):
     # derivatives = models.Item.derivatives.of_type(
     #    sa.orm.with_polymorphic(models.Derivative, [models.DerivativeImage],
     #                            aliased=True))
-    cache_items = (
+    cache_items = (             # noqa
         session.query(models.Item)
         .with_polymorphic([
             models.AlbumItem,

@@ -8,7 +8,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    inspect,
     text,
     )
 from sqlalchemy.orm import backref, relationship

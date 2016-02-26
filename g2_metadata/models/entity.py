@@ -10,8 +10,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    Text,
-    inspect,
     text,
     )
 from sqlalchemy.orm import relationship
@@ -22,10 +20,6 @@ from .types import (
     MangledText,
     Timestamp,
     )
-
-
-class EntityMixin(object):
-    pass                        # FIXME
 
 
 class Entity(Base):

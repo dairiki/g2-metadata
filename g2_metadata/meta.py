@@ -5,7 +5,7 @@ These are plain jane classes with the same names and inheritance
 tree as those in ``g2_metadata.models``.
 
 """
-
+# flake8: noqa
 
 # in .models.entity
 class Entity(object):
