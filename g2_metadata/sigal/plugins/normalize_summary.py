@@ -39,7 +39,6 @@ def normalize(item):
                              "    was: %r\n"
                              "    now: %r",
                              item, item.description, summary)
-            # FIXME: need to html-escape?
             item.description = summary
         elif is_dup:
             item.logger.info("Clearing description with matches title for %s\n"
