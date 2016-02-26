@@ -80,7 +80,6 @@ setup(
     entry_points={
         'console_scripts': [
             'g2-metadata = g2_metadata.main:main',
-            'g2-yaml-to-pck = g2_metadata.loader:yaml_to_pck',
             ],
         },
 
